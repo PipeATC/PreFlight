@@ -90,7 +90,7 @@ const T = {
 };
 
 const SETTINGS_KEY = "flightChecklistSettings";
-const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:false,lang:"es"};
+const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:true,lang:"en"};
 
 function normalizeLang(lang){
   if(lang==="fr") return "es";
@@ -1588,7 +1588,7 @@ function SpeedSheet({speedTable,color,name,registration,onClose,settings}){
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <div>
-            <div style={{fontSize:10,letterSpacing:3,color,marginBottom:3}}>✈ SPEEDS · VITESSES</div>
+            <div style={{fontSize:10,letterSpacing:3,color,marginBottom:3}}>✈ SPEEDS · VELOCIDADES</div>
             <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1.5,color:text}}>
               {name}
               {registration&&<span style={{fontSize:11,marginLeft:8,padding:"2px 7px",background:`${color}22`,
