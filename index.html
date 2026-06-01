@@ -90,7 +90,7 @@ const T = {
 };
 
 const SETTINGS_KEY = "flightChecklistSettings";
-const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:true,lang:"en"};
+const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:false,lang:"es"};
 
 function normalizeLang(lang){
   if(lang==="fr") return "es";
@@ -256,7 +256,7 @@ const PA28_SPEEDS = {
   ]
 };
 
-// ── C152 CHECKLIST NORMAL EN ──────────────────────────
+// ── C152 CHECKLIST NORMAL EN (Desde PDF) ──────────────────────────
 const C152_EN = {
   "PREFLIGHT INSPECTION": [
     "CABIN:",
@@ -438,7 +438,7 @@ const C152_EN = {
   ]
 };
 
-// ── C152 CHECKLIST NORMAL ES ──────────────────────────
+// ── C152 CHECKLIST NORMAL ES (Desde PDF) ──────────────────────────
 const C152_ES = {
   "INSPECCIÓN PREVUELO": [
     "CABINA:",
@@ -1552,7 +1552,7 @@ function EmergencySheet({emergencies, color, name, registration, onClose, settin
             return (
               <div key={idx} style={{background:`${emColor}0a`, border:`1px solid ${emColor}33`, borderRadius:6, padding:"12px 14px"}}>
                 <div style={{fontSize:14, fontWeight:"bold", color:emColor, marginBottom:8, letterSpacing:0.5}}>{title.replace("⚠","").trim()}</div>
-                <ul style={{margin:0, paddingLeft:20, color:text, fontSize:13, lineHeight:1.6}}>
+                <ul style={{margin:0, paddingLeft:20, color:text, fontSize:16, lineHeight:1.6}}>
                   {steps.map((step, sIdx) => <li key={sIdx} style={{marginBottom:4}}>{step.trim()}</li>)}
                 </ul>
               </div>
@@ -1665,7 +1665,7 @@ function SpeedSheet({speedTable,color,name,registration,onClose,settings}){
 }
 
 // ── CHECKLIST SCREEN ───────────────────────────────────────────────────────
-function ChecklistScreen({aircraftId,onBack,settings,customLists}){
+function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   const t = uiT(settings);
   const isCustom = customLists.some(c=>c.id===aircraftId);
   const customEntry = isCustom ? customLists.find(c=>c.id===aircraftId) : null;
@@ -1859,8 +1859,8 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
                   {(done||isCompleting)&&<span style={{color:"#000",fontSize:14,fontWeight:"bold",lineHeight:1}}>✓</span>}
                 </div>
               )}
-              {!isWarn&&<span style={{fontSize:13,color:textDim,width:22,flexShrink:0,letterSpacing:1,paddingTop: settings.centerText ? 0 : 2,fontWeight:"bold", textAlign: settings.centerText ? "center" : "left"}}>{String(i+1).padStart(2,"0")}</span>}
-              <span style={{fontSize:isWarn?14:15,letterSpacing:0.2,fontWeight:isWarn?"bold":"normal",
+              {!isWarn&&<span style={{fontSize:16,color:textDim,width:24,flexShrink:0,letterSpacing:1,paddingTop: settings.centerText ? 0 : 2,fontWeight:"bold", textAlign: settings.centerText ? "center" : "left"}}>{String(i+1).padStart(2,"0")}</span>}
+              <span style={{fontSize:isWarn?16:18,letterSpacing:0.2,fontWeight:isWarn?"bold":"normal",
                             color:isConfirmed?"#4CAF50":isWarn?"#FF5252":text,
                             textDecoration:isConfirmed?"line-through":"none",
                             transition:"all 0.2s",flex:1,lineHeight:1.5,
@@ -1909,6 +1909,11 @@ function ChecklistScreen({aircraftId,onBack,settings,customLists}){
         <button onClick={()=>setShowResetConfirm(true)} style={{flex:1, background:"transparent", border:"none", color:hasReset ? text : textDim, opacity: hasReset ? 1 : 0.5, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:hasReset?"pointer":"default"}} disabled={!hasReset}>
           <span style={{fontSize:18, lineHeight:1, marginTop:2}}>↺</span>
           <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>RESET</span>
+        </button>
+
+        <button onClick={onSettings} style={{flex:1, background:"transparent", border:"none", color:textDim, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+          <span style={{fontSize:20, lineHeight:1, marginTop:2}}>⚙</span>
+          <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>SETTINGS</span>
         </button>
       </div>
 
@@ -2009,7 +2014,7 @@ function HomeScreen({onSelect,onCustom,onSettings,settings}){
 }
 
 // ── SELECTION SCREEN ───────────────────────────────────────────────────────
-function SelectionScreen({aircraftType,onSelect,onBack,settings}){
+function SelectionScreen({aircraftType,onSelect,onBack,onSettings,settings}){
   const t = uiT(settings);
   const [hovered,setHovered] = useState(null);
   const typeAircraft = Object.entries(AIRCRAFT).filter(([_,ac])=>ac.aircraftType===aircraftType);
@@ -2022,12 +2027,12 @@ function SelectionScreen({aircraftType,onSelect,onBack,settings}){
   const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent = settings.milGreen?"#8fbc5a":meta.color;
 
+  const navBarBg = settings.whiteMode ? "rgba(240, 244, 248, 0.95)" : settings.milGreen ? "rgba(13, 18, 8, 0.95)" : "rgba(10, 14, 20, 0.95)";
+
   return (
-    <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 20px"}}>
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
       {/* Type header */}
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,
-                                          padding:"8px 14px",borderRadius:6,cursor:"pointer",fontSize:13,fontWeight:"bold",letterSpacing:1}}>{t.back}</button>
         <div style={{width:36,height:36,background:`${meta.color}18`,border:`1px solid ${meta.color}44`,
                      borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:20}}>
           {meta.icon}
@@ -2071,6 +2076,26 @@ function SelectionScreen({aircraftType,onSelect,onBack,settings}){
           </div>
         );
       })}
+
+      {/* Barra de Navegación Inferior Estilo Nativo */}
+      <div style={{
+        position:"fixed", bottom:0, left:0, right:0,
+        background: navBarBg, borderTop:`1px solid ${border}`,
+        display:"flex", alignItems:"center", justifyContent:"space-around",
+        padding:"10px 10px", paddingBottom:"calc(10px + env(safe-area-inset-bottom, 0px))",
+        zIndex:100, backdropFilter:"blur(12px)", WebkitBackdropFilter:"blur(12px)"
+      }}>
+        <button onClick={onBack} style={{flex:1, background:"transparent", border:"none", color:textDim, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+          <span style={{fontSize:22, lineHeight:1}}>‹</span>
+          <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>{t.back.replace('‹ ','').toUpperCase()}</span>
+        </button>
+
+        <button onClick={onSettings} style={{flex:1, background:"transparent", border:"none", color:textDim, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
+          <span style={{fontSize:20, lineHeight:1, marginTop:2}}>⚙</span>
+          <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>SETTINGS</span>
+        </button>
+      </div>
+
     </div>
   );
 }
@@ -2126,6 +2151,7 @@ function App(){
           settings={settings}
           onSelect={goChecklist}
           onBack={()=>setView("home")}
+          onSettings={()=>setShowSettings(true)}
         />
       )}
       {view==="checklist" && (
@@ -2133,6 +2159,7 @@ function App(){
           aircraftId={selectedAc}
           settings={settings}
           customLists={customLists}
+          onSettings={()=>setShowSettings(true)}
           onBack={()=>{
             const isCustom = customLists.some(c=>c.id===selectedAc);
             if(isCustom){ setView("custom"); return; }
