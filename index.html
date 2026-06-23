@@ -95,17 +95,28 @@ const T = {
 
 const SETTINGS_KEY = "flightChecklistSettings";
 const DEFAULT_SETTINGS = {whiteMode:true,milGreen:false,autoAdvance:true,floatDone:true,centerText:true,largeText:false,lang:"en"};
-const ADMIN_KEY = "preflightAdmin_v1";
-const CUSTOM_AC_KEY = "preflightCustomAC_v1";
-const CUSTOM_LISTS_KEY = "preflightCustomLists_v1";
-const CL_OVERRIDES_KEY = "preflightCLOverrides_v1";
+const ADMIN_KEY    = "preflightAdmin_v1";
+const AC_DATA_KEY  = "preflightAcData_v2";   // unified per-aircraft overrides
+const CUSTOM_AC_KEY= "preflightCustomAC_v2"; // extra aircraft added in Admin
 
 function loadAdminCfg(){try{return JSON.parse(localStorage.getItem(ADMIN_KEY))||{};}catch{return {};}}
 function saveAdminCfg(c){try{localStorage.setItem(ADMIN_KEY,JSON.stringify(c));}catch{}}
+function loadAcData(){try{return JSON.parse(localStorage.getItem(AC_DATA_KEY))||{};}catch{return {};}}
+function saveAcData(d){try{localStorage.setItem(AC_DATA_KEY,JSON.stringify(d));}catch{}}
 function loadCustomAC(){try{return JSON.parse(localStorage.getItem(CUSTOM_AC_KEY))||[];}catch{return [];}}
 function saveCustomAC(l){try{localStorage.setItem(CUSTOM_AC_KEY,JSON.stringify(l));}catch{}}
-function loadCLOverrides(){try{return JSON.parse(localStorage.getItem(CL_OVERRIDES_KEY))||{};}catch{return {};}}
-function saveCLOverrides(o){try{localStorage.setItem(CL_OVERRIDES_KEY,JSON.stringify(o));}catch{}}
+
+// Returns effective config for an aircraft, merging base data with any persisted overrides.
+// override shape per id: {checklist:{en,es}, speedTable, emergencies:{en,es}, wb:{emptyW,emptyArm,stations,maxGross,envelope}}
+function getAcOverride(id){
+  const data=loadAcData();
+  return data[id]||null;
+}
+function saveAcOverride(id,override){
+  const data=loadAcData();
+  data[id]={...( data[id]||{}), ...override};
+  saveAcData(data);
+}
 
 const WB_DATA = {
   c152:{
@@ -1721,19 +1732,29 @@ function SpeedSheet({speedTable,color,name,registration,onClose,settings}){
 // ── CHECKLIST SCREEN ───────────────────────────────────────────────────────
 function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   const t = uiT(settings);
-  const isCustom = customLists.some(c=>c.id===aircraftId);
-  const customEntry = isCustom ? customLists.find(c=>c.id===aircraftId) : null;
-
-  const ac = isCustom ? null : AIRCRAFT[aircraftId];
-  const allPhases = isCustom
-    ? Object.fromEntries(customEntry.phases.map(p=>[p.name,p.items.filter(i=>i.trim())]))
-    : (()=>{
-        const overrides = loadCLOverrides();
-        if(overrides[aircraftId]){
-          return Object.fromEntries(overrides[aircraftId].map(p=>[p.name,p.items.filter(i=>i.trim())]));
-        }
-        return checklistFor(ac, settings);
-      })();
+  // Support both built-in aircraft and custom aircraft added via Admin
+  const ac = AIRCRAFT[aircraftId] || (()=>{
+    const adminCustom = loadCustomAC().find(a=>a.id===aircraftId);
+    if(!adminCustom) return null;
+    // Build a pseudo-aircraft from the custom entry + type defaults
+    const baseType = adminCustom.aircraftType||"c152";
+    return {
+      ...adminCustom,
+      checklists:{en:C152_EN,es:C152_ES}, // fallback; override will apply
+      speedTable: null, emergencies: null,
+    };
+  })();
+  const isCustom = false; // "Mis Checklists" removed; all aircraft go through ac
+  const customEntry = null;
+  const _acOvr = ac ? getAcOverride(aircraftId) : null;
+  const allPhases = (()=>{
+    if(!ac) return {"NO AIRCRAFT":[]};
+    const lang = uiLang(settings);
+    const clOvr = _acOvr?.checklist?.[lang] || _acOvr?.checklist?.en;
+    if(clOvr && Array.isArray(clOvr)) return clArrToObj(clOvr); // Admin override (array format)
+    if(ac.checklists) return checklistFor(ac, settings);
+    return {"CHECKLIST":[]};
+  })();
 
   const phases = Object.keys(allPhases);
   const [activePhase,setActivePhase] = useState(phases[0]);
@@ -1747,7 +1768,13 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   const color = isCustom ? "#4FC3F7" : ac.color;
   const name = isCustom ? customEntry.name : ac.name;
   const reg = isCustom ? "" : ac.registration;
-  const emList = ac?.emergencies ? (ac.emergencies[uiLang(settings)] || ac.emergencies.en) : null;
+  const _lang = uiLang(settings);
+  // emergencies: override > base aircraft data
+  const emList = isCustom ? null
+    : (_acOvr?.emergencies?.[_lang] || _acOvr?.emergencies?.en
+       || (ac.emergencies ? (ac.emergencies[_lang] || ac.emergencies.en) : null));
+  // speedTable: override > base
+  const speedTableEff = isCustom ? null : (_acOvr?.speedTable || ac.speedTable);
 
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
@@ -1815,8 +1842,8 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
 
   return (
     <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
-      {showSpeeds&&!isCustom&&ac.speedTable&&(
-        <SpeedSheet speedTable={ac.speedTable} color={color} name={name} registration={reg}
+      {showSpeeds&&!isCustom&&speedTableEff&&(
+        <SpeedSheet speedTable={speedTableEff} color={color} name={name} registration={reg}
                     onClose={()=>setShowSpeeds(false)} settings={settings}/>
       )}
       {showEmergencies&&!isCustom&&emList&&(
@@ -1952,7 +1979,7 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
           <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>{t.back.replace('‹ ','').toUpperCase()}</span>
         </button>
 
-        {!isCustom && ac.speedTable && (
+        {!isCustom && speedTableEff && (
           <button onClick={()=>setShowSpeeds(true)} style={{flex:1, background:"transparent", border:"none", color:color, display:"flex", flexDirection:"column", alignItems:"center", gap:5, cursor:"pointer"}}>
             <span style={{fontSize:18, lineHeight:1, marginTop:2}}>✈</span>
             <span style={{fontSize:10, fontWeight:"bold", letterSpacing:1}}>SPEEDS</span>
@@ -1982,8 +2009,7 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
 }
 
 // ── CHECKLIST HOME (aircraft type selection) ──────────────────────────────
-function ChecklistHomeScreen({onSelect,onCustom,onBack,settings,customLists}){
-  const t = uiT(settings);
+function ChecklistHomeScreen({onSelect,onBack,settings}){
   const [hov,setHov] = useState(null);
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
@@ -1991,15 +2017,21 @@ function ChecklistHomeScreen({onSelect,onCustom,onBack,settings,customLists}){
   const text = settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
   const textDim = settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent = settings.milGreen?"#8fbc5a":"#4FC3F7";
+  const customAC = loadCustomAC();
+  // Merge built-in + custom aircraft, group by type
+  const allByType = {};
+  TYPE_ORDER.forEach(t=>{ allByType[t]=[]; });
+  Object.entries(AIRCRAFT).forEach(([id,ac])=>{ if(allByType[ac.aircraftType]) allByType[ac.aircraftType].push(id); });
+  customAC.forEach(ac=>{ if(allByType[ac.aircraftType]) allByType[ac.aircraftType].push(ac.id); });
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11,letterSpacing:1}}>{t.back}</button>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11,letterSpacing:1}}>‹ BACK</button>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:accent}}>CHECKLIST</div>
       </div>
       {TYPE_ORDER.map(typeId=>{
         const meta = TYPE_META[typeId];
-        const count = Object.values(AIRCRAFT).filter(a=>a.aircraftType===typeId).length;
+        const count = allByType[typeId].length;
         const isHov = hov===typeId;
         return (
           <div key={typeId} onClick={()=>onSelect(typeId)}
@@ -2020,22 +2052,6 @@ function ChecklistHomeScreen({onSelect,onCustom,onBack,settings,customLists}){
           </div>
         );
       })}
-      <div onClick={onCustom}
-           onMouseEnter={()=>setHov("custom")} onMouseLeave={()=>setHov(null)}
-           style={{background:cardBg,border:`1.5px solid ${hov==="custom"?accent:border}`,borderRadius:10,
-                   padding:"20px 18px",marginBottom:12,cursor:"pointer",
-                   boxShadow:hov==="custom"?`0 0 20px ${accent}33`:"none",transition:"all 0.2s",
-                   display:"flex",alignItems:"center",gap:14}}>
-        <div style={{width:60,height:60,background:`${accent}18`,border:`1px solid ${accent}44`,
-                     borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <UserLogo size={46} color={accent}/>
-        </div>
-        <div style={{flex:1}}>
-          <div style={{fontSize:16,fontWeight:"bold",letterSpacing:1,color:hov==="custom"?accent:text,transition:"color 0.2s",marginBottom:3}}>{t.customClubName}</div>
-          <div style={{fontSize:12,color:textDim,letterSpacing:1}}>{customLists.length} {t.custom}</div>
-        </div>
-        <div style={{fontSize:22,color:hov==="custom"?accent:border,transition:"all 0.2s"}}>›</div>
-      </div>
     </div>
   );
 }
@@ -2043,8 +2059,12 @@ function ChecklistHomeScreen({onSelect,onCustom,onBack,settings,customLists}){
 // ── WEIGHT & BALANCE ────────────────────────────────────────────────────────
 function WBCalculatorScreen({aircraftId,onBack,settings}){
   const ac = AIRCRAFT[aircraftId];
-  const wbData = WB_DATA[ac.aircraftType];
-  const empty = WB_EMPTY[aircraftId]||{w:1200,arm:40.0};
+  const _ovr = getAcOverride(aircraftId);
+  // wb override > WB_DATA[type] defaults
+  const _baseWb = WB_DATA[ac.aircraftType] || WB_DATA.c152;
+  const _defaultEmpty = WB_EMPTY[aircraftId] || {w:1200, arm:40.0};
+  const wbData = _ovr?.wb ? _ovr.wb : {..._baseWb, emptyW:_defaultEmpty.w, emptyArm:_defaultEmpty.arm};
+  const empty = {w: wbData.emptyW || _defaultEmpty.w, arm: wbData.emptyArm || _defaultEmpty.arm};
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
@@ -2185,6 +2205,292 @@ function WeightBalanceScreen({onBack,settings}){
 }
 
 // ── ADMIN ───────────────────────────────────────────────────────────────────
+// Helper: convert checklist object {phaseName:[items]} to array [{name,items}]
+function clObjToArr(obj){ return Object.entries(obj).map(([name,items])=>({name,items:[...items]})); }
+function clArrToObj(arr){ return Object.fromEntries(arr.map(p=>[p.name, p.items.filter(i=>i.trim())])); }
+
+// ── Admin: Checklist editor sub-panel ──────────────────────────────────────
+function AdminClEditor({phases, onChange, colors}){
+  const {border,text,textDim,accent}=colors;
+  const [activeP,setActiveP]=useState(0);
+  const p=phases[activeP]||phases[0]||{name:"",items:[]};
+  const upd=(fn)=>{ const np=fn([...phases]); onChange(np); };
+  const updName=(i,v)=>upd(ps=>{ps[i]={...ps[i],name:v.toUpperCase()};return ps;});
+  const updItem=(pi,ii,v)=>upd(ps=>{ps[pi]={...ps[pi],items:ps[pi].items.map((it,iix)=>iix===ii?v:it)};return ps;});
+  const addItem=(pi)=>upd(ps=>{ps[pi]={...ps[pi],items:[...ps[pi].items,""]};return ps;});
+  const remItem=(pi,ii)=>upd(ps=>{ps[pi]={...ps[pi],items:ps[pi].items.filter((_,iix)=>iix!==ii)};return ps;});
+  const addPhase=()=>{ upd(ps=>[...ps,{name:"NEW PHASE",items:[""]}]); setActiveP(phases.length); };
+  const remPhase=(i)=>{ if(phases.length<=1)return; upd(ps=>ps.filter((_,idx)=>idx!==i)); setActiveP(Math.max(0,i-1)); };
+  return (
+    <div>
+      <div style={{display:"flex",overflowX:"auto",gap:4,marginBottom:8,scrollbarWidth:"none"}}>
+        {phases.map((ph,i)=>(
+          <button key={i} onClick={()=>setActiveP(i)}
+                  style={{flexShrink:0,padding:"4px 8px",background:i===activeP?accent+"18":"transparent",border:`1px solid ${i===activeP?accent:border}`,color:i===activeP?accent:textDim,fontSize:8,cursor:"pointer",borderRadius:3,whiteSpace:"nowrap"}}>
+            {ph.name||"PHASE"}
+          </button>
+        ))}
+        <button onClick={addPhase} style={{flexShrink:0,padding:"4px 8px",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:8,cursor:"pointer",borderRadius:3}}>+</button>
+      </div>
+      {p&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:8}}>
+            <input value={p.name} onChange={e=>updName(activeP,e.target.value)}
+                   style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:accent,padding:"5px 8px",borderRadius:3,fontSize:12,outline:"none"}}/>
+            {phases.length>1&&<button onClick={()=>remPhase(activeP)} style={{background:"transparent",border:"1px solid #FF174444",color:"#FF1744",padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:10}}>✕</button>}
+          </div>
+          {p.items.map((item,ii)=>(
+            <div key={ii} style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
+              <div style={{width:14,height:14,border:`1px solid ${border}`,borderRadius:2,flexShrink:0}}/>
+              <input value={item} onChange={e=>updItem(activeP,ii,e.target.value)} placeholder="Item..."
+                     style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"4px 8px",borderRadius:3,fontSize:12,outline:"none"}}/>
+              <button onClick={()=>remItem(activeP,ii)} style={{background:"transparent",border:"none",color:textDim,cursor:"pointer",fontSize:12,padding:"0 3px"}}>✕</button>
+            </div>
+          ))}
+          <button onClick={()=>addItem(activeP)} style={{width:"100%",marginTop:4,padding:"5px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>+ ITEM</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Admin: Speeds editor sub-panel ─────────────────────────────────────────
+function AdminSpeedEditor({speedTable, onChange, colors}){
+  const {border,text,textDim,accent}=colors;
+  const [tab,setTab]=useState("ops");
+  const upd=(patch)=>onChange({...speedTable,...patch});
+  const updRow=(i,field,val)=>{ const rows=[...speedTable.rows]; rows[i]={...rows[i],[field]:parseFloat(val)||0}; upd({rows}); };
+  const updOp=(i,field,val)=>{ const ops=[...speedTable.ops]; ops[i]={...ops[i],[field]:val}; upd({ops}); };
+  const addOp=()=>upd({ops:[...speedTable.ops,{label:"",desc:"",value:""}]});
+  const remOp=(i)=>upd({ops:speedTable.ops.filter((_,idx)=>idx!==i)});
+  const INP=(extra={})=>({background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 6px",borderRadius:3,fontSize:12,outline:"none",...extra});
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {["ops","rows","limits"].map(t=>(
+          <button key={t} onClick={()=>setTab(t)}
+                  style={{flex:1,padding:"6px 0",background:tab===t?accent+"18":"transparent",border:`1px solid ${tab===t?accent:border}`,color:tab===t?accent:textDim,fontSize:9,cursor:"pointer",borderRadius:3}}>
+            {t.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {tab==="ops"&&(
+        <div>
+          {speedTable.ops.map((op,i)=>(
+            <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+              <input value={op.label} onChange={e=>updOp(i,"label",e.target.value)} placeholder="Vx" style={{...INP(),width:40}}/>
+              <input value={op.desc} onChange={e=>updOp(i,"desc",e.target.value)} placeholder="Best angle" style={{...INP(),flex:1}}/>
+              <input value={op.value} onChange={e=>updOp(i,"value",e.target.value)} placeholder="55 KIAS" style={{...INP(),width:70}}/>
+              <button onClick={()=>remOp(i)} style={{background:"transparent",border:"none",color:"#FF5252",cursor:"pointer",fontSize:12}}>✕</button>
+            </div>
+          ))}
+          <button onClick={addOp} style={{width:"100%",padding:"5px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>+ ADD SPEED</button>
+        </div>
+      )}
+      {tab==="rows"&&(
+        <div>
+          {speedTable.rows.map((row,i)=>(
+            <div key={i} style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:accent,marginBottom:4}}>{row.label}</div>
+              <div style={{display:"flex",gap:4}}>
+                {["vs","v12","v13","v145"].map(f=>(
+                  <div key={f} style={{flex:1}}>
+                    <div style={{fontSize:8,color:textDim,marginBottom:2}}>{f.toUpperCase()}</div>
+                    <input type="number" value={row[f]} onChange={e=>updRow(i,f,e.target.value)} style={{...INP(),width:"100%"}}/>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {tab==="limits"&&(
+        <div>
+          {(speedTable.limits||[]).map((lim,i)=>(
+            <div key={i} style={{display:"flex",gap:6,marginBottom:6}}>
+              <input value={lim.label} onChange={e=>{ const l=[...speedTable.limits]; l[i]={...l[i],label:e.target.value}; upd({limits:l}); }} style={{...INP(),flex:1}}/>
+              <input value={lim.value} onChange={e=>{ const l=[...speedTable.limits]; l[i]={...l[i],value:e.target.value}; upd({limits:l}); }} style={{...INP(),width:80}}/>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Admin: Emergencies editor sub-panel ────────────────────────────────────
+function AdminEmEditor({emergencies, onChange, colors}){
+  const {border,text,textDim,accent}=colors;
+  const [lang,setLang]=useState("en");
+  const items=emergencies[lang]||[];
+  const upd=(newItems)=>onChange({...emergencies,[lang]:newItems});
+  return (
+    <div>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {["en","es"].map(l=>(
+          <button key={l} onClick={()=>setLang(l)}
+                  style={{flex:1,padding:"6px 0",background:lang===l?accent+"18":"transparent",border:`1px solid ${lang===l?accent:border}`,color:lang===l?accent:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>
+            {l.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      {items.map((em,i)=>(
+        <div key={i} style={{display:"flex",gap:6,marginBottom:6}}>
+          <textarea value={em} onChange={e=>{ const n=[...items]; n[i]=e.target.value; upd(n); }} rows={2}
+                    style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 8px",borderRadius:3,fontSize:11,outline:"none",resize:"vertical"}}/>
+          <button onClick={()=>upd(items.filter((_,idx)=>idx!==i))} style={{background:"transparent",border:"none",color:"#FF5252",cursor:"pointer",fontSize:14,alignSelf:"start"}}>✕</button>
+        </div>
+      ))}
+      <button onClick={()=>upd([...items,"⚠ NEW EMERGENCY: Step 1 / Step 2"])}
+              style={{width:"100%",padding:"5px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>
+        + ADD EMERGENCY
+      </button>
+    </div>
+  );
+}
+
+// ── Admin: W&B editor sub-panel ────────────────────────────────────────────
+function AdminWBEditor({wb, onChange, colors}){
+  const {border,text,textDim,accent}=colors;
+  const updField=(field,val)=>onChange({...wb,[field]:parseFloat(val)||0});
+  const updStation=(i,field,val)=>{ const st=[...wb.stations]; st[i]={...st[i],[field]:field==="label"||field==="id"?val:(parseFloat(val)||0)}; onChange({...wb,stations:st}); };
+  const addStation=()=>onChange({...wb,stations:[...wb.stations,{id:"new"+Date.now(),label:"New Station",arm:0,max:0}]});
+  const remStation=(i)=>onChange({...wb,stations:wb.stations.filter((_,idx)=>idx!==i)});
+  const INP=(extra={})=>({background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 6px",borderRadius:3,fontSize:12,outline:"none",...extra});
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+        {[{l:"Empty Weight (lbs)",f:"emptyW"},{l:"Empty Arm (in)",f:"emptyArm"},{l:"Max Gross (lbs)",f:"maxGross"}].map(({l,f})=>(
+          <div key={f}>
+            <div style={{fontSize:9,color:textDim,marginBottom:3}}>{l}</div>
+            <input type="number" value={wb[f]||0} onChange={e=>updField(f,e.target.value)} style={{...INP(),width:"100%"}}/>
+          </div>
+        ))}
+      </div>
+      <div style={{fontSize:10,letterSpacing:2,color:accent,marginBottom:6}}>CG ENVELOPE</div>
+      {(wb.envelope||[]).map((pt,i)=>(
+        <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+          <div style={{fontSize:9,color:textDim,width:50}}>W={pt.w}</div>
+          {["w","fwd","aft"].map(f=>(
+            <div key={f} style={{flex:1}}>
+              <div style={{fontSize:8,color:textDim,marginBottom:2}}>{f.toUpperCase()}</div>
+              <input type="number" value={pt[f]} onChange={e=>{ const env=[...(wb.envelope||[])]; env[i]={...env[i],[f]:parseFloat(e.target.value)||0}; onChange({...wb,envelope:env}); }} style={{...INP(),width:"100%"}}/>
+            </div>
+          ))}
+        </div>
+      ))}
+      <div style={{fontSize:10,letterSpacing:2,color:accent,marginTop:10,marginBottom:6}}>STATIONS</div>
+      {wb.stations.map((st,i)=>(
+        <div key={i} style={{background:"transparent",border:`1px solid ${border}`,borderRadius:6,padding:"8px 10px",marginBottom:6}}>
+          <div style={{display:"flex",gap:6,marginBottom:5,alignItems:"center"}}>
+            <input value={st.label} onChange={e=>updStation(i,"label",e.target.value)} placeholder="Label" style={{...INP(),flex:1}}/>
+            <button onClick={()=>remStation(i)} style={{background:"transparent",border:"none",color:"#FF5252",cursor:"pointer",fontSize:12}}>✕</button>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            <div style={{flex:1}}><div style={{fontSize:8,color:textDim,marginBottom:2}}>ARM (in)</div><input type="number" value={st.arm} onChange={e=>updStation(i,"arm",e.target.value)} style={{...INP(),width:"100%"}}/></div>
+            <div style={{flex:1}}><div style={{fontSize:8,color:textDim,marginBottom:2}}>MAX</div><input type="number" value={st.max} onChange={e=>updStation(i,"max",e.target.value)} style={{...INP(),width:"100%"}}/></div>
+            <div style={{flex:1}}><div style={{fontSize:8,color:textDim,marginBottom:2}}>FUEL?</div>
+              <button onClick={()=>updStation(i,"isFuel",!st.isFuel)}
+                      style={{width:"100%",padding:"5px 0",background:st.isFuel?accent+"22":"transparent",border:`1px solid ${st.isFuel?accent:border}`,color:st.isFuel?accent:textDim,fontSize:9,cursor:"pointer",borderRadius:3}}>
+                {st.isFuel?"YES":"NO"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <button onClick={addStation} style={{width:"100%",padding:"5px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>+ STATION</button>
+    </div>
+  );
+}
+
+// ── Admin: Single aircraft full editor ─────────────────────────────────────
+function AdminAcEditor({acId, acBase, onBack, settings, colors}){
+  const {border,text,textDim,accent,bg,cardBg}=colors;
+  const [tab,setTab]=useState("checklist");
+  const [clLang,setClLang]=useState(uiLang(settings));
+  const lang=uiLang(settings);
+  // Load existing override or build defaults from base aircraft data
+  const initOverride=()=>{
+    const existing=getAcOverride(acId);
+    if(existing) return existing;
+    const baseAc=acBase;
+    return {
+      checklist:{
+        en: baseAc.checklists?.en ? clObjToArr(baseAc.checklists.en) : [{name:"CHECKLIST",items:[""]}],
+        es: baseAc.checklists?.es ? clObjToArr(baseAc.checklists.es) : [{name:"CHECKLIST",items:[""]}],
+      },
+      speedTable: baseAc.speedTable ? JSON.parse(JSON.stringify(baseAc.speedTable)) : {unit:"KIAS",rows:[],ops:[],limits:[]},
+      emergencies:{
+        en: baseAc.emergencies?.en ? [...baseAc.emergencies.en] : [],
+        es: baseAc.emergencies?.es ? [...baseAc.emergencies.es] : [],
+      },
+      wb: (()=>{
+        const wbd=WB_DATA[baseAc.aircraftType]||WB_DATA.c152;
+        const emp=WB_EMPTY[acId]||{w:1200,arm:40.0};
+        return { emptyW:emp.w, emptyArm:emp.arm, stations:JSON.parse(JSON.stringify(wbd.stations)), maxGross:wbd.maxGross, envelope:JSON.parse(JSON.stringify(wbd.envelope)) };
+      })(),
+    };
+  };
+  const [ovr,setOvr]=useState(initOverride);
+  const [saved,setSaved]=useState(false);
+
+  const save=()=>{ saveAcOverride(acId,ovr); setSaved(true); setTimeout(()=>setSaved(false),2000); };
+
+  const updCl=(lang2,phases)=>setOvr(o=>({...o,checklist:{...o.checklist,[lang2]:phases}}));
+  const TABS=[{id:"checklist",l:"CHECKLIST"},{id:"speeds",l:"SPEEDS"},{id:"emerg",l:"EMERG."},{id:"wb",l:"P&B"}];
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexShrink:0}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹</button>
+        <div style={{flex:1}}>
+          <div style={{fontSize:11,color:accent,letterSpacing:1}}>{acBase.name}</div>
+          <div style={{fontSize:10,color:textDim}}>{acBase.registration}</div>
+        </div>
+        <button onClick={save}
+                style={{padding:"7px 14px",background:saved?"#4CAF5022":accent+"22",border:`1px solid ${saved?"#4CAF50":accent}`,color:saved?"#4CAF50":accent,fontSize:11,cursor:"pointer",borderRadius:4,letterSpacing:1,transition:"all 0.2s"}}>
+          {saved?"✓ SAVED":"GUARDAR"}
+        </button>
+      </div>
+      <div style={{display:"flex",gap:4,marginBottom:10,flexShrink:0}}>
+        {TABS.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)}
+                  style={{flex:1,padding:"7px 2px",background:tab===t.id?accent+"18":"transparent",border:`1px solid ${tab===t.id?accent:border}`,color:tab===t.id?accent:textDim,fontSize:9,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <div style={{flex:1,overflow:"auto"}}>
+        {tab==="checklist"&&(
+          <div>
+            <div style={{display:"flex",gap:6,marginBottom:10}}>
+              {["en","es"].map(l=>(
+                <button key={l} onClick={()=>setClLang(l)}
+                        style={{flex:1,padding:"7px 0",background:clLang===l?accent+"18":"transparent",border:`1px solid ${clLang===l?accent:border}`,color:clLang===l?accent:textDim,fontSize:11,cursor:"pointer",borderRadius:4,letterSpacing:2}}>
+                  {l.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <AdminClEditor
+              phases={ovr.checklist[clLang]||[{name:"CHECKLIST",items:[""]}]}
+              onChange={phases=>updCl(clLang,phases)}
+              colors={colors}/>
+          </div>
+        )}
+        {tab==="speeds"&&ovr.speedTable&&(
+          <AdminSpeedEditor speedTable={ovr.speedTable} onChange={st=>setOvr(o=>({...o,speedTable:st}))} colors={colors}/>
+        )}
+        {tab==="emerg"&&(
+          <AdminEmEditor emergencies={ovr.emergencies||{en:[],es:[]}} onChange={em=>setOvr(o=>({...o,emergencies:em}))} colors={colors}/>
+        )}
+        {tab==="wb"&&(
+          <AdminWBEditor wb={ovr.wb} onChange={wb=>setOvr(o=>({...o,wb}))} colors={colors}/>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AircraftEditor({initial,onSave,onCancel,colors}){
   const {border,text,textDim,accent}=colors;
   const [name,setName]=useState(initial?.name||"");
@@ -2228,148 +2534,16 @@ function AircraftEditor({initial,onSave,onCancel,colors}){
   );
 }
 
-function AdminAircraftTab({customAC,onUpdate,settings,colors}){
-  const {cardBg,border,text,textDim,accent}=colors;
-  const [editing,setEditing]=useState(null);
-  const builtIn=Object.entries(AIRCRAFT).map(([id,ac])=>({...ac,id}));
-  if(editing!==null){
-    return <AircraftEditor
-      initial={editing==="new"?null:editing}
-      onSave={ac=>{
-        const withId={...ac,id:editing==="new"?"custom-"+Date.now():editing.id};
-        onUpdate(editing==="new"?[...customAC,withId]:customAC.map(a=>a.id===editing.id?withId:a));
-        setEditing(null);
-      }}
-      onCancel={()=>setEditing(null)}
-      settings={settings} colors={colors}/>;
-  }
-  return (
-    <div>
-      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:8}}>INSTALADAS / BUILT-IN</div>
-      {builtIn.map(ac=>(
-        <div key={ac.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"11px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:38,height:38,background:`${ac.color}18`,border:`1px solid ${ac.color}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
-            <div style={{fontSize:11,color:ac.color}}>{ac.registration}</div>
-          </div>
-          <div style={{fontSize:9,color:textDim,padding:"2px 6px",border:`1px solid ${border}`,borderRadius:3}}>BUILT-IN</div>
-        </div>
-      ))}
-      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:8,marginTop:16}}>PERSONALIZADAS</div>
-      {customAC.length===0&&<div style={{textAlign:"center",padding:"16px",color:textDim,fontSize:11}}>Sin aeronaves personalizadas</div>}
-      {customAC.map(ac=>(
-        <div key={ac.id} style={{background:cardBg,border:`1px solid ${border}`,borderRadius:8,padding:"11px 14px",marginBottom:7,display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:38,height:38,background:`${ac.color||accent}18`,border:`1px solid ${ac.color||accent}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
-            <div style={{fontSize:11,color:ac.color||accent}}>{ac.registration}</div>
-          </div>
-          <button onClick={()=>setEditing(ac)} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:9}}>EDITAR</button>
-          <button onClick={()=>onUpdate(customAC.filter(a=>a.id!==ac.id))} style={{background:"transparent",border:"1px solid #FF174444",color:"#FF1744",padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:9}}>✕</button>
-        </div>
-      ))}
-      <button onClick={()=>setEditing("new")}
-              style={{width:"100%",marginTop:8,padding:"12px 0",background:`${accent}14`,border:`1.5px dashed ${accent}`,color:accent,fontSize:11,cursor:"pointer",borderRadius:6,letterSpacing:2}}>
-        + AGREGAR AERONAVE
-      </button>
-    </div>
-  );
-}
-
-function AdminChecklistEditor({acName,phases,onSave,onBack,colors}){
-  const {border,text,textDim,accent}=colors;
-  const [ep,setEp]=useState(phases);
-  const [activeP,setActiveP]=useState(0);
-  const p=ep[activeP]||ep[0];
-  const updName=(i,v)=>setEp(ps=>ps.map((ph,idx)=>idx===i?{...ph,name:v.toUpperCase()}:ph));
-  const updItem=(pi,ii,v)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:ph.items.map((it,iix)=>iix===ii?v:it)}:ph));
-  const addItem=(pi)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:[...ph.items,""]}:ph));
-  const remItem=(pi,ii)=>setEp(ps=>ps.map((ph,idx)=>idx===pi?{...ph,items:ph.items.filter((_,iix)=>iix!==ii)}:ph));
-  const addPhase=()=>{setEp(ps=>[...ps,{name:"NEW PHASE",items:[""]}]);setActiveP(ep.length);};
-  const remPhase=(i)=>{if(ep.length<=1)return;const np=ep.filter((_,idx)=>idx!==i);setEp(np);setActiveP(Math.min(i,np.length-1));};
-  return (
-    <div>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹</button>
-        <div style={{flex:1,fontSize:11,color:accent,letterSpacing:1}}>{acName}</div>
-        <button onClick={()=>{onSave(ep);onBack();}} style={{background:`${accent}22`,border:`1px solid ${accent}`,color:accent,padding:"5px 12px",borderRadius:4,cursor:"pointer",fontSize:11}}>GUARDAR</button>
-      </div>
-      <div style={{display:"flex",overflowX:"auto",gap:4,marginBottom:8,scrollbarWidth:"none"}}>
-        {ep.map((ph,i)=>(
-          <button key={i} onClick={()=>setActiveP(i)}
-                  style={{flexShrink:0,padding:"4px 8px",background:i===activeP?accent+"18":"transparent",border:`1px solid ${i===activeP?accent:border}`,color:i===activeP?accent:textDim,fontSize:8,letterSpacing:1,cursor:"pointer",borderRadius:3,whiteSpace:"nowrap"}}>
-            {ph.name||"PHASE"}
-          </button>
-        ))}
-        <button onClick={addPhase} style={{flexShrink:0,padding:"4px 8px",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:8,cursor:"pointer",borderRadius:3}}>+</button>
-      </div>
-      {p&&(
-        <div>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
-            <input value={p.name} onChange={e=>updName(activeP,e.target.value)}
-                   style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:accent,padding:"5px 8px",borderRadius:3,fontSize:12,outline:"none"}}/>
-            {ep.length>1&&<button onClick={()=>remPhase(activeP)} style={{background:"transparent",border:"1px solid #FF174444",color:"#FF1744",padding:"4px 8px",borderRadius:3,cursor:"pointer",fontSize:10}}>✕</button>}
-          </div>
-          {p.items.map((item,ii)=>(
-            <div key={ii} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
-              <div style={{width:16,height:16,border:`1px solid ${border}`,borderRadius:2,flexShrink:0}}/>
-              <input value={item} onChange={e=>updItem(activeP,ii,e.target.value)} placeholder="Item..."
-                     style={{flex:1,background:"transparent",border:`1px solid ${border}`,color:text,padding:"5px 8px",borderRadius:3,fontSize:13,outline:"none"}}/>
-              <button onClick={()=>remItem(activeP,ii)} style={{background:"transparent",border:"none",color:textDim,cursor:"pointer",fontSize:13,padding:"0 4px"}}>✕</button>
-            </div>
-          ))}
-          <button onClick={()=>addItem(activeP)}
-                  style={{width:"100%",marginTop:4,padding:"6px 0",background:"transparent",border:`1px dashed ${textDim}`,color:textDim,fontSize:10,cursor:"pointer",borderRadius:3}}>
-            + ADD ITEM
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AdminChecklistsTab({settings,colors}){
-  const {cardBg,border,text,textDim,accent}=colors;
-  const [selId,setSelId]=useState(null);
-  const [overrides,setOverrides]=useState(loadCLOverrides);
-  if(selId){
-    const ac=AIRCRAFT[selId];
-    const base=checklistFor(ac,settings);
-    const cur=overrides[selId]||Object.entries(base).map(([name,items])=>({name,items}));
-    return <AdminChecklistEditor
-      acName={`${ac.name} ${ac.registration}`}
-      phases={cur}
-      onSave={phases=>{const o={...overrides,[selId]:phases};setOverrides(o);saveCLOverrides(o);}}
-      onBack={()=>setSelId(null)}
-      settings={settings} colors={colors}/>;
-  }
-  return (
-    <div>
-      <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:10}}>SELECCIONAR AERONAVE</div>
-      {Object.entries(AIRCRAFT).map(([id,ac])=>(
-        <div key={id} onClick={()=>setSelId(id)}
-             style={{background:cardBg,border:`1px solid ${overrides[id]?"#4CAF5066":border}`,borderRadius:8,padding:"12px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:38,height:38,background:`${ac.color}18`,border:`1px solid ${ac.color}44`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>✈</div>
-          <div style={{flex:1}}>
-            <div style={{fontSize:13,fontWeight:"bold",color:text}}>{ac.name}</div>
-            <div style={{fontSize:11,color:ac.color}}>{ac.registration}</div>
-          </div>
-          {overrides[id]&&<div style={{fontSize:9,color:"#4CAF50",letterSpacing:1}}>EDITADO</div>}
-          <div style={{fontSize:20,color:border}}>›</div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function AdminScreen({onBack,settings}){
-  const [adminCfg,setAdminCfg]=useState(loadAdminCfg);
+  const [adminCfg]=useState(loadAdminCfg);
   const [isAuth,setIsAuth]=useState(false);
   const [pw,setPw]=useState("");
   const [pwErr,setPwErr]=useState(false);
-  const [tab,setTab]=useState("aircraft");
   const [customAC,setCustomAC]=useState(loadCustomAC);
+  const [editingAcId,setEditingAcId]=useState(null); // null=list, id=editor
+  const [addingNew,setAddingNew]=useState(false);
+
   const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
@@ -2377,9 +2551,11 @@ function AdminScreen({onBack,settings}){
   const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
   const colors={bg,cardBg,border,text,textDim,accent};
+
   const defPw=adminCfg.password||"admin1234";
-  const tryLogin=()=>{if(pw===defPw){setIsAuth(true);setPwErr(false);}else{setPwErr(true);}};
-  const updAC=(list)=>{setCustomAC(list);saveCustomAC(list);};
+  const tryLogin=()=>{ if(pw===defPw){setIsAuth(true);setPwErr(false);}else{setPwErr(true);} };
+  const updCustomAC=(list)=>{ setCustomAC(list); saveCustomAC(list); };
+
   if(!isAuth){
     return (
       <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24}}>
@@ -2391,49 +2567,75 @@ function AdminScreen({onBack,settings}){
                  style={{width:"100%",background:"transparent",border:`1px solid ${pwErr?"#FF5252":border}`,color:text,
                          padding:"12px 14px",borderRadius:6,fontSize:14,outline:"none",marginBottom:8,textAlign:"center",boxSizing:"border-box"}}/>
           {pwErr&&<div style={{color:"#FF5252",fontSize:11,textAlign:"center",marginBottom:8,letterSpacing:1}}>CONTRASEÑA INCORRECTA</div>}
-          <button onClick={tryLogin}
-                  style={{width:"100%",padding:"12px 0",background:`${accent}22`,border:`1px solid ${accent}`,color:accent,fontSize:13,letterSpacing:2,cursor:"pointer",borderRadius:6,marginBottom:10}}>
-            INGRESAR
-          </button>
-          <button onClick={onBack}
-                  style={{width:"100%",padding:"10px 0",background:"transparent",border:`1px solid ${border}`,color:textDim,fontSize:11,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
-            ‹ VOLVER / BACK
-          </button>
+          <button onClick={tryLogin} style={{width:"100%",padding:"12px 0",background:`${accent}22`,border:`1px solid ${accent}`,color:accent,fontSize:13,letterSpacing:2,cursor:"pointer",borderRadius:6,marginBottom:10}}>INGRESAR</button>
+          <button onClick={onBack} style={{width:"100%",padding:"10px 0",background:"transparent",border:`1px solid ${border}`,color:textDim,fontSize:11,letterSpacing:1,cursor:"pointer",borderRadius:4}}>‹ VOLVER / BACK</button>
         </div>
-        <div style={{position:"absolute",bottom:30,fontSize:10,color:textDim,letterSpacing:1,textAlign:"center"}}>
-          Contraseña por defecto: admin1234
-        </div>
+        <div style={{position:"absolute",bottom:30,fontSize:10,color:textDim,letterSpacing:1,textAlign:"center"}}>Contraseña por defecto: admin1234</div>
       </div>
     );
   }
-  const TABS=[{id:"aircraft",label:"AERONAVES"},{id:"checklists",label:"CHECKLISTS"},{id:"pbConfig",label:"P&B CONFIG"}];
+
+  // Show full editor for a single aircraft
+  if(editingAcId){
+    const isBuiltIn=!!AIRCRAFT[editingAcId];
+    const acBase=isBuiltIn ? AIRCRAFT[editingAcId] : customAC.find(a=>a.id===editingAcId);
+    if(!acBase) return null;
+    return (
+      <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 20px",display:"flex",flexDirection:"column"}}>
+        <AdminAcEditor acId={editingAcId} acBase={acBase} onBack={()=>setEditingAcId(null)} settings={settings} colors={colors}/>
+      </div>
+    );
+  }
+
+  // Show form to add new custom aircraft
+  if(addingNew){
+    return (
+      <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 20px"}}>
+        <AircraftEditor initial={null}
+          onSave={ac=>{ const withId={...ac,id:"custom-"+Date.now()}; updCustomAC([...customAC,withId]); setAddingNew(false); }}
+          onCancel={()=>setAddingNew(false)} colors={colors}/>
+      </div>
+    );
+  }
+
+  // Aircraft list
+  const allAc=[
+    ...Object.entries(AIRCRAFT).map(([id,ac])=>({id,...ac,isBuiltIn:true})),
+    ...customAC.map(ac=>({...ac,isBuiltIn:false})),
+  ];
+  const hasOvr=(id)=>!!getAcOverride(id);
+
   return (
     <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
-      <div style={{padding:"16px 14px 10px",borderBottom:`1px solid ${border}`,flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-          <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
-          <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent}}>ADMINISTRACIÓN</div>
-          <button onClick={()=>setIsAuth(false)} style={{background:"transparent",border:"none",color:textDim,fontSize:10,cursor:"pointer",letterSpacing:1}}>SALIR</button>
-        </div>
-        <div style={{display:"flex",gap:6}}>
-          {TABS.map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
-                    style={{flex:1,padding:"8px 4px",background:tab===t.id?accent+"18":"transparent",border:`1px solid ${tab===t.id?accent:border}`,color:tab===t.id?accent:textDim,fontSize:9,letterSpacing:1,cursor:"pointer",borderRadius:4}}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+      <div style={{padding:"16px 14px 10px",borderBottom:`1px solid ${border}`,flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
+        <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent}}>ADMINISTRACIÓN</div>
+        <button onClick={()=>setIsAuth(false)} style={{background:"transparent",border:"none",color:textDim,fontSize:10,cursor:"pointer"}}>SALIR</button>
       </div>
       <div style={{flex:1,overflow:"auto",padding:"14px 14px 80px"}}>
-        {tab==="aircraft"&&<AdminAircraftTab customAC={customAC} onUpdate={updAC} settings={settings} colors={colors}/>}
-        {tab==="checklists"&&<AdminChecklistsTab settings={settings} colors={colors}/>}
-        {tab==="pbConfig"&&(
-          <div style={{textAlign:"center",padding:"60px 20px"}}>
-            <div style={{fontSize:40,marginBottom:12}}>⚖</div>
-            <div style={{fontSize:12,color:textDim,letterSpacing:2}}>P&B CONFIGURATION</div>
-            <div style={{fontSize:11,color:textDim,marginTop:8}}>Próximamente · Coming soon</div>
-          </div>
-        )}
+        <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:10}}>SELECCIONAR AERONAVE PARA EDITAR</div>
+        {allAc.map(ac=>{
+          const edited=hasOvr(ac.id);
+          return (
+            <div key={ac.id} onClick={()=>setEditingAcId(ac.id)}
+                 style={{background:cardBg,border:`1px solid ${edited?"#4CAF5055":border}`,borderRadius:8,padding:"13px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:42,height:42,background:`${ac.color||accent}18`,border:`1px solid ${ac.color||accent}44`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>✈</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:14,fontWeight:"bold",color:text}}>{ac.name}</div>
+                <div style={{fontSize:11,color:ac.color||accent,marginTop:2}}>{ac.registration}</div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                {edited&&<div style={{fontSize:9,color:"#4CAF50",letterSpacing:1}}>EDITADO</div>}
+                {!ac.isBuiltIn&&<div style={{fontSize:9,color:textDim,letterSpacing:1}}>CUSTOM</div>}
+              </div>
+              <div style={{fontSize:20,color:border}}>›</div>
+            </div>
+          );
+        })}
+        <button onClick={()=>setAddingNew(true)}
+                style={{width:"100%",marginTop:8,padding:"12px 0",background:`${accent}14`,border:`1.5px dashed ${accent}`,color:accent,fontSize:11,cursor:"pointer",borderRadius:6,letterSpacing:2}}>
+          + AGREGAR AERONAVE
+        </button>
       </div>
     </div>
   );
@@ -2535,7 +2737,22 @@ function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onOptions,settings}
 function SelectionScreen({aircraftType,onSelect,onBack,onSettings,settings}){
   const t = uiT(settings);
   const [hovered,setHovered] = useState(null);
-  const typeAircraft = Object.entries(AIRCRAFT).filter(([_,ac])=>ac.aircraftType===aircraftType);
+  // Merge built-in + custom aircraft for this type
+  const _customAC = loadCustomAC();
+  const builtInEntries = Object.entries(AIRCRAFT).filter(([_,ac])=>ac.aircraftType===aircraftType);
+  const customEntries = _customAC.filter(ac=>ac.aircraftType===aircraftType).map(ac=>{
+    const ovr = getAcOverride(ac.id);
+    const baseTypeCl = {en:C152_EN,es:C152_ES}; // fallback; real data from override
+    return [ac.id, {
+      ...ac,
+      checklists: ovr?.checklist
+        ? {en:clArrToObj(ovr.checklist.en||[]),es:clArrToObj(ovr.checklist.es||[])}
+        : baseTypeCl,
+      speedTable: ovr?.speedTable || null,
+      emergencies: ovr?.emergencies || null,
+    }];
+  });
+  const typeAircraft = [...builtInEntries, ...customEntries];
   const meta = TYPE_META[aircraftType];
 
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
@@ -2622,11 +2839,9 @@ function SelectionScreen({aircraftType,onSelect,onBack,onSettings,settings}){
 function App(){
   const [settings,setSettings] = useState(loadSettings);
   const [view,setView] = useState("main");
+  const [showSettings,setShowSettings] = useState(false);
   const [selectedType,setSelectedType] = useState(null);
   const [selectedAc,setSelectedAc] = useState(null);
-  const [customLists,setCustomLists] = useState(()=>{
-    try{return JSON.parse(localStorage.getItem(CUSTOM_LISTS_KEY))||[];}catch{return [];}
-  });
 
   const updateSettings = (patch)=>{
     setSettings(prev=>{
@@ -2635,11 +2850,6 @@ function App(){
       try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); }catch{}
       return next;
     });
-  };
-
-  const updateCustomLists = (lists)=>{
-    setCustomLists(lists);
-    try{localStorage.setItem(CUSTOM_LISTS_KEY,JSON.stringify(lists));}catch{}
   };
 
   useEffect(()=>{
@@ -2653,6 +2863,7 @@ function App(){
 
   const goChecklist = (id)=>{ setSelectedAc(id); setView("checklist"); };
   const selectType = (typeId)=>{ setSelectedType(typeId); setView("type"); };
+  const openSettings = ()=>setShowSettings(true);
 
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
@@ -2662,15 +2873,13 @@ function App(){
           onChecklist={()=>setView("checklist-home")}
           onWeightBalance={()=>setView("weight-balance")}
           onAdmin={()=>setView("admin")}
-          onOptions={()=>setView("options")}
+          onOptions={openSettings}
         />
       )}
       {view==="checklist-home" && (
         <ChecklistHomeScreen
           settings={settings}
-          customLists={customLists}
           onSelect={selectType}
-          onCustom={()=>setView("custom")}
           onBack={()=>setView("main")}
         />
       )}
@@ -2680,18 +2889,16 @@ function App(){
           settings={settings}
           onSelect={goChecklist}
           onBack={()=>setView("checklist-home")}
-          onSettings={()=>setView("options")}
+          onSettings={openSettings}
         />
       )}
       {view==="checklist" && (
         <ChecklistScreen
           aircraftId={selectedAc}
           settings={settings}
-          customLists={customLists}
-          onSettings={()=>setView("options")}
+          customLists={[]}
+          onSettings={openSettings}
           onBack={()=>{
-            const isCustom = customLists.some(c=>c.id===selectedAc);
-            if(isCustom){ setView("custom"); return; }
             const ac = AIRCRAFT[selectedAc];
             const sameType = ac?.aircraftType
               ? Object.values(AIRCRAFT).filter(a=>a.aircraftType===ac.aircraftType)
@@ -2701,23 +2908,14 @@ function App(){
           }}
         />
       )}
-      {view==="custom" && (
-        <CustomScreen
-          settings={settings}
-          customLists={customLists}
-          setCustomLists={updateCustomLists}
-          onBack={()=>setView("checklist-home")}
-          onSelect={(id)=>{ setSelectedAc(id); setView("checklist"); }}
-        />
-      )}
       {view==="weight-balance" && (
         <WeightBalanceScreen settings={settings} onBack={()=>setView("main")}/>
       )}
       {view==="admin" && (
         <AdminScreen settings={settings} onBack={()=>setView("main")}/>
       )}
-      {view==="options" && (
-        <OptionsScreen settings={settings} setSettings={updateSettings} onBack={()=>setView("main")}/>
+      {showSettings && (
+        <SettingsPanel onClose={()=>setShowSettings(false)} settings={settings} setSettings={updateSettings}/>
       )}
     </div>
   );
