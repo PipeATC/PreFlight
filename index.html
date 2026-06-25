@@ -2045,8 +2045,33 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   );
 }
 
+// Reusable bottom navigation bar (Back + Settings) — same style as the checklist pages.
+function BottomNavBar({onBack,onSettings,settings,children}){
+  const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const navBarBg=settings.whiteMode?"rgba(240, 244, 248, 0.95)":settings.milGreen?"rgba(13, 18, 8, 0.95)":"rgba(10, 14, 20, 0.95)";
+  const t=uiT(settings);
+  const btn={flex:1,background:"transparent",border:"none",color:textDim,display:"flex",flexDirection:"column",alignItems:"center",gap:5,cursor:"pointer"};
+  return (
+    <div style={{position:"fixed",bottom:0,left:0,right:0,background:navBarBg,borderTop:`1px solid ${border}`,
+                 display:"flex",alignItems:"center",justifyContent:"space-around",
+                 padding:"10px 10px",paddingBottom:"calc(10px + env(safe-area-inset-bottom, 0px))",
+                 zIndex:100,backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+      <button onClick={onBack} style={btn}>
+        <span style={{fontSize:22,lineHeight:1}}>‹</span>
+        <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1}}>{t.back.replace('‹ ','').toUpperCase()}</span>
+      </button>
+      {children}
+      {onSettings&&<button onClick={onSettings} style={btn}>
+        <span style={{fontSize:20,lineHeight:1,marginTop:2}}>⚙</span>
+        <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1}}>SETTINGS</span>
+      </button>}
+    </div>
+  );
+}
+
 // ── CHECKLIST HOME (aircraft type selection) ──────────────────────────────
-function ChecklistHomeScreen({onSelect,onBack,settings}){
+function ChecklistHomeScreen({onSelect,onBack,onSettings,settings}){
   const [hov,setHov] = useState(null);
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
@@ -2061,9 +2086,8 @@ function ChecklistHomeScreen({onSelect,onBack,settings}){
   Object.entries(AIRCRAFT).forEach(([id,ac])=>{ if(allByType[ac.aircraftType]) allByType[ac.aircraftType].push(id); });
   customAC.forEach(ac=>{ if(allByType[ac.aircraftType]) allByType[ac.aircraftType].push(ac.id); });
   return (
-    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 100px",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11,letterSpacing:1}}>‹ BACK</button>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:accent}}>CHECKLIST</div>
       </div>
       {TYPE_ORDER.map(typeId=>{
@@ -2089,6 +2113,7 @@ function ChecklistHomeScreen({onSelect,onBack,settings}){
           </div>
         );
       })}
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
     </div>
   );
 }
@@ -2151,7 +2176,7 @@ function WBEnvelopeChart({envelope,maxGross,cg,totalW,statusColor,inLimits,color
   );
 }
 
-function WBCalculatorScreen({aircraftId,onBack,settings}){
+function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
   const ac = AIRCRAFT[aircraftId];
   const _ovr = getAcOverride(aircraftId);
   // wb override > WB_DATA[type] defaults
@@ -2191,7 +2216,6 @@ function WBCalculatorScreen({aircraftId,onBack,settings}){
   return (
     <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
         <div style={{flex:1}}>
           <div style={{fontSize:10,letterSpacing:3,color:accent}}>{uiT(settings).wbTitle}</div>
           <div style={{fontSize:16,fontWeight:"bold",color:text}}>{ac.name} <span style={{fontSize:11,color:accent,padding:"2px 6px",background:`${accent}22`,border:`1px solid ${accent}44`,borderRadius:3}}>{ac.registration}</span></div>
@@ -2281,11 +2305,12 @@ function WBCalculatorScreen({aircraftId,onBack,settings}){
           {totalW>0?<span>Loaded point plotted in <b style={{color:sc}}>{overW?"red (over MTOW)":cgOk?"green (within limits)":"amber (out of range)"}</b></span>:"Enter weights to plot the loaded point"}
         </div>
       </div>
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
     </div>
   );
 }
 
-function WeightBalanceScreen({onBack,settings}){
+function WeightBalanceScreen({onBack,onSettings,settings}){
   const t=uiT(settings);
   const [selType,setSelType]=useState(null);
   const [selAcId,setSelAcId]=useState(null);
@@ -2295,14 +2320,13 @@ function WeightBalanceScreen({onBack,settings}){
   const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
   const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
   const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
-  if(selAcId) return <WBCalculatorScreen aircraftId={selAcId} onBack={()=>setSelAcId(null)} settings={settings}/>;
+  if(selAcId) return <WBCalculatorScreen aircraftId={selAcId} onBack={()=>setSelAcId(null)} onSettings={onSettings} settings={settings}/>;
   if(selType){
     const typeAc=Object.entries(AIRCRAFT).filter(([_,ac])=>ac.aircraftType===selType);
     const meta=TYPE_META[selType];
     return (
-      <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 20px"}}>
+      <div style={{minHeight:"100vh",background:bg,padding:"16px 14px 100px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-          <button onClick={()=>setSelType(null)} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
           <div style={{fontSize:11,letterSpacing:3,color:accent}}>{meta.label.toUpperCase()}</div>
         </div>
         {typeAc.map(([id,ac])=>(
@@ -2316,13 +2340,13 @@ function WeightBalanceScreen({onBack,settings}){
             <div style={{fontSize:20,color:border}}>›</div>
           </div>
         ))}
+        <BottomNavBar onBack={()=>setSelType(null)} onSettings={onSettings} settings={settings}/>
       </div>
     );
   }
   return (
-    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 20px",display:"flex",flexDirection:"column"}}>
+    <div style={{minHeight:"100vh",background:bg,padding:"16px 16px 100px",display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:5,color:accent}}>{t.wbTitle}</div>
       </div>
       <div style={{textAlign:"center",marginBottom:24}}>
@@ -2343,6 +2367,7 @@ function WeightBalanceScreen({onBack,settings}){
           </div>
         );
       })}
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
     </div>
   );
 }
@@ -2678,7 +2703,7 @@ function AircraftEditor({initial,onSave,onCancel,colors}){
 }
 
 
-function AdminScreen({onBack,settings}){
+function AdminScreen({onBack,onSettings,settings}){
   const t=uiT(settings);
   const [adminCfg]=useState(loadAdminCfg);
   const [isAuth,setIsAuth]=useState(false);
@@ -2752,11 +2777,10 @@ function AdminScreen({onBack,settings}){
   return (
     <div style={{minHeight:"100vh",background:bg,display:"flex",flexDirection:"column"}}>
       <div style={{padding:"16px 14px 10px",borderBottom:`1px solid ${border}`,flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
-        <button onClick={onBack} style={{background:"transparent",border:`1px solid ${border}`,color:textDim,padding:"5px 10px",borderRadius:4,cursor:"pointer",fontSize:11}}>‹ BACK</button>
         <div style={{flex:1,fontSize:11,letterSpacing:4,color:accent}}>{t.adminTitle}</div>
         <button onClick={()=>setIsAuth(false)} style={{background:"transparent",border:"none",color:textDim,fontSize:10,cursor:"pointer"}}>SALIR</button>
       </div>
-      <div style={{flex:1,overflow:"auto",padding:"14px 14px 80px"}}>
+      <div style={{flex:1,overflow:"auto",padding:"14px 14px 100px"}}>
         <div style={{fontSize:10,letterSpacing:3,color:textDim,marginBottom:10}}>SELECCIONAR AERONAVE PARA EDITAR</div>
         {allAc.map(ac=>{
           const edited=hasOvr(ac.id);
@@ -2781,6 +2805,7 @@ function AdminScreen({onBack,settings}){
           + AGREGAR AERONAVE
         </button>
       </div>
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
     </div>
   );
 }
@@ -3026,6 +3051,7 @@ function App(){
           settings={settings}
           onSelect={selectType}
           onBack={()=>setView("main")}
+          onSettings={openSettings}
         />
       )}
       {view==="type" && (
@@ -3054,10 +3080,10 @@ function App(){
         />
       )}
       {view==="weight-balance" && (
-        <WeightBalanceScreen settings={settings} onBack={()=>setView("main")}/>
+        <WeightBalanceScreen settings={settings} onBack={()=>setView("main")} onSettings={openSettings}/>
       )}
       {view==="admin" && (
-        <AdminScreen settings={settings} onBack={()=>setView("main")}/>
+        <AdminScreen settings={settings} onBack={()=>setView("main")} onSettings={openSettings}/>
       )}
       {showSettings && (
         <SettingsPanel onClose={()=>setShowSettings(false)} settings={settings} setSettings={updateSettings}/>
