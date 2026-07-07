@@ -2183,7 +2183,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
   const _baseWb = WB_DATA[ac.aircraftType] || WB_DATA.c152;
   const _defaultEmpty = WB_EMPTY[aircraftId] || {w:1200, arm:40.0};
   const wbData = _ovr?.wb ? _ovr.wb : {..._baseWb, emptyW:_defaultEmpty.w, emptyArm:_defaultEmpty.arm};
-  const empty = {w: wbData.emptyW || _defaultEmpty.w, arm: wbData.emptyArm || _defaultEmpty.arm};
+  const empty = {w: wbData.emptyW || _defaultEmpty.w, arm: wbData.emptyArm || _defaultEmpty.arm, mom: parseFloat(wbData.emptyMom)||0};
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border = settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
@@ -2195,7 +2195,9 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
   const upd = (id,v)=>setVals(p=>({...p,[id]:v}));
   const empW = emptyOverride.w!==""?(parseFloat(emptyOverride.w)||0):empty.w;
   const empArm = emptyOverride.arm!==""?(parseFloat(emptyOverride.arm)||0):empty.arm;
-  const emMom = empW*empArm;
+  // Use the certificate's precise empty moment when it's configured and the pilot
+  // hasn't manually overridden the empty weight or arm for this calculation.
+  const emMom = (empty.mom>0 && emptyOverride.w==="" && emptyOverride.arm==="") ? empty.mom : empW*empArm;
   const totals = wbData.stations.reduce((acc,st)=>{
     const raw=parseFloat(vals[st.id])||0;
     const w=st.isFuel?raw*st.density:raw;
@@ -2528,12 +2530,22 @@ function AdminWBEditor({wb, onChange, colors}){
   return (
     <div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-        {[{l:"Empty Weight (lbs)",f:"emptyW"},{l:"Empty Arm (in)",f:"emptyArm"},{l:"Max Gross (lbs)",f:"maxGross"}].map(({l,f})=>(
+        {[{l:"Empty Weight (lbs)",f:"emptyW"},{l:"Empty Arm (in)",f:"emptyArm"}].map(({l,f})=>(
           <div key={f}>
             <div style={{fontSize:9,color:textDim,marginBottom:3}}>{l}</div>
             <input type="number" value={wb[f]||0} onChange={e=>updField(f,e.target.value)} style={{...INP(),width:"100%"}}/>
           </div>
         ))}
+        <div>
+          <div style={{fontSize:9,color:textDim,marginBottom:3}}>Empty Moment (lb·in)</div>
+          <input type="number" value={wb.emptyMom||""} placeholder={((wb.emptyW||0)*(wb.emptyArm||0)).toFixed(0)}
+                 onChange={e=>updField("emptyMom",e.target.value)} style={{...INP(),width:"100%"}}/>
+          <div style={{fontSize:8,color:textDim,marginTop:2}}>Opcional · usa el del certificado en vez de W×Arm</div>
+        </div>
+        <div>
+          <div style={{fontSize:9,color:textDim,marginBottom:3}}>Max Gross (lbs)</div>
+          <input type="number" value={wb.maxGross||0} onChange={e=>updField("maxGross",e.target.value)} style={{...INP(),width:"100%"}}/>
+        </div>
       </div>
       <div style={{fontSize:10,letterSpacing:2,color:accent,marginBottom:6}}>CG ENVELOPE</div>
       {(wb.envelope||[]).map((pt,i)=>(
