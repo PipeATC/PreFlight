@@ -1,14 +1,16 @@
-const CACHE = 'preflight-v1';
+const CACHE = 'preflight-v2';
 
+// All assets are same-origin and vendored into the repo, so the app installs
+// completely onto the device and runs with no network connection at all.
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js',
+  './vendor/react.production.min.js',
+  './vendor/react-dom.production.min.js',
+  './vendor/babel.min.js',
 ];
 
 function isAppDocument(request) {
@@ -24,7 +26,11 @@ function isAppDocument(request) {
 
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).catch(() => {})
+    caches.open(CACHE).then(cache =>
+      // Cache each asset independently so one failure can't abort the whole
+      // precache — every file that succeeds stays available offline.
+      Promise.allSettled(ASSETS.map(a => cache.add(a)))
+    ).catch(() => {})
   );
   self.skipWaiting();
 });
