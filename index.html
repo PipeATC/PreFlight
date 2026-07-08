@@ -2260,7 +2260,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
                   </td>
                   <td style={td}>
                     <input type="number" value={raw} onChange={e=>upd(st.id,e.target.value)} placeholder={st.isFuel?"gal":"lbs"} style={cellInp}/>
-                    {st.isFuel&&parsed>0&&<div style={{fontSize:8,color:textDim,marginTop:2}}>{w.toFixed(0)} lbs</div>}
+                    {st.isFuel&&parsed>0&&<div style={{fontSize:8,color:textDim,marginTop:2}}>{w.toFixed(2)} lbs</div>}
                   </td>
                   <td style={{...td,color:textDim}}>{st.arm}</td>
                   <td style={{...td,color:textDim}}>{m.toFixed(0)}</td>
@@ -2270,7 +2270,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
             {/* Total */}
             <tr style={{background:`${accent}14`}}>
               <td style={{...tdItem,fontWeight:"bold",color:accent,borderBottom:"none"}}>TOTAL WEIGHT &amp; MOMENT</td>
-              <td style={{...td,fontWeight:"bold",color:overW?"#FF5252":text,borderBottom:"none"}}>{totalW.toFixed(0)}</td>
+              <td style={{...td,fontWeight:"bold",color:overW?"#FF5252":text,borderBottom:"none"}}>{totalW.toFixed(2)}</td>
               <td style={{...td,borderBottom:"none"}}/>
               <td style={{...td,fontWeight:"bold",color:text,borderBottom:"none"}}>{totalM.toFixed(0)}</td>
             </tr>
@@ -2285,7 +2285,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
       {/* ── Status ── */}
       <div style={{background:`${sc}14`,border:`2px solid ${sc}55`,borderRadius:10,padding:"12px 14px",marginBottom:10}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
-          {[{l:"PESO · WEIGHT",v:`${totalW.toFixed(0)}`,s:`Max ${wbData.maxGross} lbs`},
+          {[{l:"PESO · WEIGHT",v:`${totalW.toFixed(2)}`,s:`Max ${wbData.maxGross} lbs`},
             {l:"C.G.",v:`${cg.toFixed(2)}`,s:`Limits ${lim.fwd.toFixed(1)}–${lim.aft.toFixed(1)} in`},
             {l:"MOMENT",v:totalM.toFixed(0),s:"lb·in"}
           ].map(({l,v,s})=>(
