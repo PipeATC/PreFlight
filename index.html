@@ -15,9 +15,10 @@
   <link rel="apple-touch-icon" sizes="152x152" href="icon-192.png"/>
   <link rel="apple-touch-icon" sizes="180x180" href="icon-192.png"/>
   <link rel="apple-touch-icon" sizes="167x167" href="icon-192.png"/>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <!-- Vendored locally so the app runs fully offline once installed (no CDN dependency). -->
+  <script src="vendor/react.production.min.js"></script>
+  <script src="vendor/react-dom.production.min.js"></script>
+  <script src="vendor/babel.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
     body{
@@ -172,7 +173,7 @@ const WB_DATA = {
 // editable in the calculator; values below are defaults from each aircraft's
 // records. C152 values from the Club Aéreo form ("PLANES BASIC WEIGHT").
 const WB_EMPTY = {
-  "c152-cc-kik":{w:1204.00,arm:31.50},"c152-cc-kse":{w:1178.56,arm:30.77},"c152-cc-cny":{w:1169.79,arm:30.22},
+  "c152-cc-kik":{w:1204.00,arm:31.50,mom:37983},"c152-cc-kse":{w:1178.56,arm:30.77,mom:36260},"c152-cc-cny":{w:1169.79,arm:30.22,mom:35346},
   "c172-cc-psb":{w:1400,arm:41.0},
   "pa28-cc-kif":{w:1734,arm:87.1},"pa28-cc-kih":{w:1734,arm:87.1},"pa28-cc-kid":{w:1734,arm:87.1},
 };
@@ -2182,7 +2183,7 @@ function WBCalculatorScreen({aircraftId,onBack,onSettings,settings}){
   // wb override > WB_DATA[type] defaults
   const _baseWb = WB_DATA[ac.aircraftType] || WB_DATA.c152;
   const _defaultEmpty = WB_EMPTY[aircraftId] || {w:1200, arm:40.0};
-  const wbData = _ovr?.wb ? _ovr.wb : {..._baseWb, emptyW:_defaultEmpty.w, emptyArm:_defaultEmpty.arm};
+  const wbData = _ovr?.wb ? _ovr.wb : {..._baseWb, emptyW:_defaultEmpty.w, emptyArm:_defaultEmpty.arm, emptyMom:_defaultEmpty.mom};
   const empty = {w: wbData.emptyW || _defaultEmpty.w, arm: wbData.emptyArm || _defaultEmpty.arm, mom: parseFloat(wbData.emptyMom)||0};
   const bg = settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg = settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
@@ -2607,7 +2608,7 @@ function AdminAcEditor({acId, acBase, onBack, settings, colors}){
       wb: (()=>{
         const wbd=WB_DATA[baseAc.aircraftType]||WB_DATA.c152;
         const emp=WB_EMPTY[acId]||{w:1200,arm:40.0};
-        return { emptyW:emp.w, emptyArm:emp.arm, stations:JSON.parse(JSON.stringify(wbd.stations)), maxGross:wbd.maxGross, envelope:JSON.parse(JSON.stringify(wbd.envelope)) };
+        return { emptyW:emp.w, emptyArm:emp.arm, emptyMom:emp.mom, stations:JSON.parse(JSON.stringify(wbd.stations)), maxGross:wbd.maxGross, envelope:JSON.parse(JSON.stringify(wbd.envelope)) };
       })(),
     };
   };
@@ -3109,7 +3110,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
 <script>
 if('serviceWorker' in navigator){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js?v=7')
+    navigator.serviceWorker.register('sw.js?v=8')
       .then(function(reg){
         reg.update();
         console.log('SW registered:', reg.scope);
