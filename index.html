@@ -143,6 +143,12 @@ const SCRATCH_KEY = "preflightScratchpads_v1"; // handwritten scratchpad notes
 function loadScratchpads(){try{return JSON.parse(localStorage.getItem(SCRATCH_KEY))||[];}catch{return [];}}
 function saveScratchpads(l){try{localStorage.setItem(SCRATCH_KEY,JSON.stringify(l));}catch{}}
 
+// Remembered drawing tool preferences (colour, stroke width, pen-only), kept on
+// the installed device so they persist across notes and app relaunches.
+const SCRATCH_PREFS_KEY = "preflightScratchPrefs_v1";
+function loadScratchPrefs(){try{return JSON.parse(localStorage.getItem(SCRATCH_PREFS_KEY))||{};}catch{return {};}}
+function saveScratchPrefs(p){try{localStorage.setItem(SCRATCH_PREFS_KEY,JSON.stringify(p));}catch{}}
+
 // In-progress checklist state, persisted per aircraft so partially completed
 // checklists survive app reloads/closes until the pilot presses RESET.
 const PROGRESS_KEY = "preflightProgress_v1";
@@ -3297,11 +3303,13 @@ function ScratchpadEditor({pad,settings,onSave}){
   const WIDTHS=[2,4,8];
 
   const [title,setTitle]=useState(pad.title||"");
-  const [color,setColor]=useState(COLORS[0]);
-  const [width,setWidth]=useState(4);
+  // Colour / width / pen-only are remembered on the device across notes & relaunches.
+  const [color,setColor]=useState(()=>{const p=loadScratchPrefs(); return p.color||COLORS[0];});
+  const [width,setWidth]=useState(()=>{const p=loadScratchPrefs(); return WIDTHS.includes(p.width)?p.width:4;});
   const [erase,setErase]=useState(false);
-  const [penOnly,setPenOnly]=useState(false);
+  const [penOnly,setPenOnly]=useState(()=>!!loadScratchPrefs().penOnly);
   const [,force]=useState(0); const rerender=()=>force(v=>v+1);
+  useEffect(()=>{ saveScratchPrefs({color,width,penOnly}); },[color,width,penOnly]);
 
   const wrapRef=useRef(null), bgRef=useRef(null), drawRef=useRef(null);
   const strokesRef=useRef((pad.strokes||[]).map(s=>({...s,p:s.p.slice()})));
