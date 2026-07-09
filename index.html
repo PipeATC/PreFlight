@@ -80,7 +80,14 @@ const T = {
     menuChecklist:"CHECKLIST", menuChecklistDesc:"Normal & Emergency Procedures",
     menuWB:"WEIGHT & BALANCE", menuWBDesc:"Weight & Balance · CG Calculator",
     menuAdmin:"ADMINISTRATION", menuAdminDesc:"Aircraft & Checklist Management",
+    menuScratch:"SCRATCHPAD", menuScratchDesc:"Handwritten Notes · Pen, Touch & Mouse",
     menuOptions:"OPTIONS", menuOptionsDesc:"Settings & Preferences",
+    scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
+    scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
+    scratchEmpty:"No scratchpads yet.", scratchEmptyHint:"Tap + to create your first note.",
+    scratchClearConfirm:"Clear this scratchpad?", scratchDeleteConfirm:"Delete this scratchpad?",
+    scratchUntitled:"Untitled", scratchPenOnly:"PEN ONLY", scratchNoteTitle:"Note title…", scratchEraser:"ERASER",
+    edit:"EDIT", done2:"DONE",
     wbTitle:"WEIGHT & BALANCE", selectAircraft:"SELECT AIRCRAFT", adminTitle:"ADMINISTRATION"
   },
   es:{
@@ -99,7 +106,14 @@ const T = {
     menuChecklist:"CHECKLIST", menuChecklistDesc:"Procedimientos Normales y de Emergencia",
     menuWB:"PESO Y BALANCE", menuWBDesc:"Peso y Balance · Cálculo de CG",
     menuAdmin:"ADMINISTRACIÓN", menuAdminDesc:"Gestión de Aeronaves y Listas",
+    menuScratch:"BLOC DE NOTAS", menuScratchDesc:"Notas a mano · Lápiz, Táctil y Mouse",
     menuOptions:"OPCIONES", menuOptionsDesc:"Ajustes y Preferencias",
+    scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
+    scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
+    scratchEmpty:"Aún no hay notas.", scratchEmptyHint:"Toca + para crear tu primera nota.",
+    scratchClearConfirm:"¿Borrar el contenido de esta nota?", scratchDeleteConfirm:"¿Eliminar esta nota?",
+    scratchUntitled:"Sin título", scratchPenOnly:"SOLO LÁPIZ", scratchNoteTitle:"Título de la nota…", scratchEraser:"BORRADOR",
+    edit:"EDITAR", done2:"LISTO",
     wbTitle:"PESO Y BALANCE", selectAircraft:"SELECCIONA AERONAVE", adminTitle:"ADMINISTRACIÓN"
   }
 };
@@ -116,6 +130,10 @@ function loadAcData(){try{return JSON.parse(localStorage.getItem(AC_DATA_KEY))||
 function saveAcData(d){try{localStorage.setItem(AC_DATA_KEY,JSON.stringify(d));}catch{}}
 function loadCustomAC(){try{return JSON.parse(localStorage.getItem(CUSTOM_AC_KEY))||[];}catch{return [];}}
 function saveCustomAC(l){try{localStorage.setItem(CUSTOM_AC_KEY,JSON.stringify(l));}catch{}}
+
+const SCRATCH_KEY = "preflightScratchpads_v1"; // handwritten scratchpad notes
+function loadScratchpads(){try{return JSON.parse(localStorage.getItem(SCRATCH_KEY))||[];}catch{return [];}}
+function saveScratchpads(l){try{localStorage.setItem(SCRATCH_KEY,JSON.stringify(l));}catch{}}
 
 // In-progress checklist state, persisted per aircraft so partially completed
 // checklists survive app reloads/closes until the pilot presses RESET.
@@ -2878,7 +2896,383 @@ function OptionsScreen({onBack,settings,setSettings}){
 }
 
 // ── MAIN MENU ───────────────────────────────────────────────────────────────
-function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onOptions,settings}){
+// ── SCRATCHPAD ──────────────────────────────────────────────────────────────
+// Handwritten note pad. Draws with any pointer — Apple Pencil / stylus, finger
+// touch, or mouse — via the Pointer Events API. Strokes are stored as vector
+// points in a normalised 0..1 space so a note re-renders crisply at any size or
+// pixel density, and persist in localStorage (fully offline, like the rest of
+// the app). Themes follow the app's dark / white / mil-green palettes.
+
+function scratchColors(settings){
+  return {
+    bg:      settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14",
+    cardBg:  settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624",
+    border:  settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a",
+    text:    settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5",
+    textDim: settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070",
+    accent:  settings.milGreen?"#8fbc5a":"#4FC3F7",
+    // Drawing surface: a "paper" colour + faint template lines + default ink.
+    paper:   settings.milGreen?"#10180a":settings.whiteMode?"#ffffff":"#0e1826",
+    grid:    settings.milGreen?"rgba(143,188,90,0.16)":settings.whiteMode?"rgba(120,140,165,0.22)":"rgba(120,150,190,0.15)",
+    ink:     settings.milGreen?"#d6e4bf":settings.whiteMode?"#1a2535":"#e8eef5",
+  };
+}
+
+// Paint the template background (grid / lines / blank) into a 2D context.
+function drawScratchTemplate(ctx,w,h,template,gridColor){
+  if(template==="blank") return;
+  ctx.save();
+  ctx.strokeStyle=gridColor; ctx.lineWidth=1;
+  ctx.beginPath();
+  if(template==="grid"){
+    const step=Math.max(18,w/18);
+    for(let x=step;x<w;x+=step){ctx.moveTo(x,0);ctx.lineTo(x,h);}
+    for(let y=step;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
+  }else if(template==="lines"){
+    const step=Math.max(26,h/16);
+    for(let y=step;y<h;y+=step){ctx.moveTo(0,y);ctx.lineTo(w,y);}
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Draw one stroke (normalised points) onto a context sized w×h.
+function drawScratchStroke(ctx,s,w,h){
+  const p=s.p; if(!p||!p.length) return;
+  ctx.lineJoin="round"; ctx.lineCap="round"; ctx.lineWidth=s.w;
+  if(s.e){ ctx.globalCompositeOperation="destination-out"; ctx.strokeStyle="rgba(0,0,0,1)"; ctx.fillStyle="rgba(0,0,0,1)"; }
+  else   { ctx.globalCompositeOperation="source-over";     ctx.strokeStyle=s.c;             ctx.fillStyle=s.c; }
+  if(p.length===1){
+    ctx.beginPath(); ctx.arc(p[0][0]*w,p[0][1]*h,s.w/2,0,Math.PI*2); ctx.fill();
+  }else{
+    ctx.beginPath(); ctx.moveTo(p[0][0]*w,p[0][1]*h);
+    for(let i=1;i<p.length;i++) ctx.lineTo(p[i][0]*w,p[i][1]*h);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation="source-over";
+}
+
+function fmtScratchDate(ts){
+  try{ const d=new Date(ts); return d.toLocaleDateString()+" "+d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); }
+  catch{ return ""; }
+}
+
+// ── Full-screen drawing editor ───────────────────────────────────────────────
+function ScratchpadEditor({pad,settings,onSave}){
+  const c=scratchColors(settings);
+  const t=uiT(settings);
+  const COLORS=[c.ink,"#E53935","#1E88E5","#43A047","#FDD835","#FB8C00"];
+  const WIDTHS=[2,4,8];
+
+  const [title,setTitle]=useState(pad.title||"");
+  const [color,setColor]=useState(COLORS[0]);
+  const [width,setWidth]=useState(4);
+  const [erase,setErase]=useState(false);
+  const [penOnly,setPenOnly]=useState(false);
+  const [,force]=useState(0); const rerender=()=>force(v=>v+1);
+
+  const wrapRef=useRef(null), bgRef=useRef(null), drawRef=useRef(null);
+  const strokesRef=useRef((pad.strokes||[]).map(s=>({...s,p:s.p.slice()})));
+  const redoRef=useRef([]);
+  const curRef=useRef(null);
+  const ptrRef=useRef(null);
+  const dprRef=useRef(1);
+
+  // live tool values for pointer handlers (avoid stale closures)
+  const toolRef=useRef({color,width,erase,penOnly});
+  toolRef.current={color,width,erase,penOnly};
+
+  const ctxOf=(cv)=>{ const g=cv.getContext("2d"); g.setTransform(dprRef.current,0,0,dprRef.current,0,0); return g; };
+  const size=()=>({w:wrapRef.current.clientWidth,h:wrapRef.current.clientHeight});
+
+  const renderBg=()=>{
+    const {w,h}=size(); const g=ctxOf(bgRef.current);
+    g.clearRect(0,0,w,h); g.fillStyle=c.paper; g.fillRect(0,0,w,h);
+    drawScratchTemplate(g,w,h,pad.template,c.grid);
+  };
+  const renderStrokes=()=>{
+    const {w,h}=size(); const g=ctxOf(drawRef.current);
+    g.clearRect(0,0,w,h);
+    strokesRef.current.forEach(s=>drawScratchStroke(g,s,w,h));
+  };
+
+  const setupCanvas=()=>{
+    const wrap=wrapRef.current; if(!wrap) return;
+    const w=wrap.clientWidth, h=wrap.clientHeight;
+    const dpr=window.devicePixelRatio||1; dprRef.current=dpr;
+    [bgRef.current,drawRef.current].forEach(cv=>{
+      cv.width=Math.round(w*dpr); cv.height=Math.round(h*dpr);
+      cv.style.width=w+"px"; cv.style.height=h+"px";
+    });
+    renderBg(); renderStrokes();
+  };
+
+  useEffect(()=>{
+    setupCanvas();
+    const onResize=()=>setupCanvas();
+    window.addEventListener("resize",onResize);
+    window.addEventListener("orientationchange",onResize);
+    return ()=>{ window.removeEventListener("resize",onResize); window.removeEventListener("orientationchange",onResize); };
+  // eslint-disable-next-line
+  },[]);
+  // Re-theme the surface if the palette changes while open.
+  useEffect(()=>{ if(wrapRef.current){ renderBg(); renderStrokes(); } // eslint-disable-next-line
+  },[settings.milGreen,settings.whiteMode]);
+
+  const nrm=(e)=>{
+    const r=drawRef.current.getBoundingClientRect();
+    return [ (e.clientX-r.left)/r.width, (e.clientY-r.top)/r.height ];
+  };
+
+  const onDown=(e)=>{
+    const tool=toolRef.current;
+    if(tool.penOnly && e.pointerType==="touch") return;   // palm / finger rejection
+    if(ptrRef.current!==null) return;                     // one pointer at a time
+    ptrRef.current=e.pointerId;
+    try{ drawRef.current.setPointerCapture(e.pointerId); }catch{}
+    const s={ c:tool.color, w:tool.width, e:tool.erase, p:[nrm(e)] };
+    curRef.current=s; redoRef.current=[];
+    const {w,h}=size(); drawScratchStroke(ctxOf(drawRef.current),s,w,h);
+    e.preventDefault();
+  };
+  const onMove=(e)=>{
+    if(e.pointerId!==ptrRef.current) return;
+    const s=curRef.current; if(!s) return;
+    const {w,h}=size(); const g=ctxOf(drawRef.current);
+    g.lineJoin="round"; g.lineCap="round"; g.lineWidth=s.w;
+    if(s.e){ g.globalCompositeOperation="destination-out"; g.strokeStyle="rgba(0,0,0,1)"; }
+    else   { g.globalCompositeOperation="source-over";     g.strokeStyle=s.c; }
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    evs.forEach(ev=>{
+      const n=nrm(ev); const last=s.p[s.p.length-1];
+      g.beginPath(); g.moveTo(last[0]*w,last[1]*h); g.lineTo(n[0]*w,n[1]*h); g.stroke();
+      s.p.push(n);
+    });
+    g.globalCompositeOperation="source-over";
+    e.preventDefault();
+  };
+  const onUp=(e)=>{
+    if(e.pointerId!==ptrRef.current) return;
+    try{ drawRef.current.releasePointerCapture(e.pointerId); }catch{}
+    ptrRef.current=null;
+    if(curRef.current){ strokesRef.current.push(curRef.current); curRef.current=null; rerender(); }
+  };
+
+  const undo=()=>{ if(!strokesRef.current.length) return; redoRef.current.push(strokesRef.current.pop()); renderStrokes(); rerender(); };
+  const redo=()=>{ if(!redoRef.current.length) return; strokesRef.current.push(redoRef.current.pop()); renderStrokes(); rerender(); };
+  const clearAll=()=>{ if(!strokesRef.current.length) return; if(!confirm(t.scratchClearConfirm)) return; redoRef.current=[]; strokesRef.current=[]; renderStrokes(); rerender(); };
+
+  const makeThumb=()=>{
+    if(!strokesRef.current.length) return "";
+    const {w,h}=size(); const tw=360, th=Math.max(1,Math.round(tw*h/w));
+    const off=document.createElement("canvas"); off.width=tw; off.height=th;
+    const g=off.getContext("2d");
+    g.fillStyle=c.paper; g.fillRect(0,0,tw,th);
+    drawScratchTemplate(g,tw,th,pad.template,c.grid);
+    strokesRef.current.forEach(s=>drawScratchStroke(g,s,tw,th));
+    try{ return off.toDataURL("image/png"); }catch{ return ""; }
+  };
+
+  const commit=()=>{
+    onSave({
+      ...pad,
+      title:title.trim(),
+      strokes:strokesRef.current,
+      thumb:makeThumb(),
+      updatedAt:Date.now(),
+    });
+  };
+
+  const btn=(active)=>({
+    display:"flex",alignItems:"center",justifyContent:"center",gap:5,
+    background:active?c.accent+"22":"transparent",border:`1px solid ${active?c.accent:c.border}`,
+    color:active?c.accent:c.textDim,borderRadius:8,padding:"8px 10px",fontSize:11,fontWeight:"bold",
+    letterSpacing:1,cursor:"pointer",transition:"all 0.15s",minWidth:40,
+  });
+  const barBg=settings.whiteMode?"rgba(240,244,248,0.96)":settings.milGreen?"rgba(13,18,8,0.96)":"rgba(10,14,20,0.96)";
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:200,background:c.bg,display:"flex",flexDirection:"column"}}>
+      {/* Top bar: back(save) · title · undo/redo/clear */}
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",
+                   paddingTop:"calc(10px + env(safe-area-inset-top,0px))",
+                   background:barBg,borderBottom:`1px solid ${c.border}`,
+                   backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+        <button onClick={commit} style={{...btn(false),padding:"8px 12px"}}>‹ {t.back.replace('‹ ','')}</button>
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t.scratchNoteTitle}
+               style={{flex:1,minWidth:0,background:"transparent",border:"none",outline:"none",
+                       color:c.text,fontSize:15,fontWeight:"bold",letterSpacing:1,textAlign:"center"}}/>
+        <button onClick={undo} disabled={!strokesRef.current.length} title="Undo"
+                style={{...btn(false),opacity:strokesRef.current.length?1:0.35}}>↶</button>
+        <button onClick={redo} disabled={!redoRef.current.length} title="Redo"
+                style={{...btn(false),opacity:redoRef.current.length?1:0.35}}>↷</button>
+        <button onClick={clearAll} style={{...btn(false),color:strokesRef.current.length?"#E57373":c.textDim,
+                borderColor:strokesRef.current.length?"#E5737355":c.border}}>🗑</button>
+      </div>
+
+      {/* Drawing surface */}
+      <div ref={wrapRef} style={{flex:1,position:"relative",overflow:"hidden",touchAction:"none"}}>
+        <canvas ref={bgRef} style={{position:"absolute",inset:0}}/>
+        <canvas ref={drawRef}
+                onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp}
+                onPointerCancel={onUp} onPointerLeave={onUp}
+                style={{position:"absolute",inset:0,touchAction:"none",cursor:"crosshair"}}/>
+      </div>
+
+      {/* Tool bar: colours · widths · pen-only · eraser */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"center",
+                   padding:"12px 12px",paddingBottom:"calc(12px + env(safe-area-inset-bottom,0px))",
+                   background:barBg,borderTop:`1px solid ${c.border}`,
+                   backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)"}}>
+        <div style={{display:"flex",gap:8}}>
+          {COLORS.map(col=>{
+            const sel=!erase&&color===col;
+            return <button key={col} onClick={()=>{setColor(col);setErase(false);}}
+              style={{width:30,height:30,borderRadius:"50%",background:col,cursor:"pointer",
+                      border:sel?`2.5px solid ${c.accent}`:`2px solid ${c.border}`,
+                      boxShadow:sel?`0 0 10px ${c.accent}88`:"none",transition:"all 0.15s"}}/>;
+          })}
+        </div>
+        <div style={{width:1,height:26,background:c.border}}/>
+        <div style={{display:"flex",gap:6}}>
+          {WIDTHS.map(wd=>{
+            const sel=width===wd;
+            return <button key={wd} onClick={()=>setWidth(wd)}
+              style={{width:34,height:30,display:"flex",alignItems:"center",justifyContent:"center",
+                      background:sel?c.accent+"22":"transparent",border:`1px solid ${sel?c.accent:c.border}`,
+                      borderRadius:8,cursor:"pointer",transition:"all 0.15s"}}>
+              <div style={{width:wd+6,height:wd+6,borderRadius:"50%",background:sel?c.accent:c.textDim}}/>
+            </button>;
+          })}
+        </div>
+        <div style={{width:1,height:26,background:c.border}}/>
+        <button onClick={()=>setErase(e=>!e)} style={btn(erase)}>◨ {t.scratchEraser}</button>
+        <button onClick={()=>setPenOnly(p=>!p)} style={btn(penOnly)}>✎ {t.scratchPenOnly}</button>
+      </div>
+    </div>
+  );
+}
+
+// ── Gallery of saved scratchpads ─────────────────────────────────────────────
+function ScratchpadScreen({settings,onBack,onSettings}){
+  const c=scratchColors(settings);
+  const t=uiT(settings);
+  const [pads,setPads]=useState(loadScratchpads);
+  const [editing,setEditing]=useState(null);
+  const [chooser,setChooser]=useState(false);
+  const [editMode,setEditMode]=useState(false);
+
+  const persist=(list)=>{ setPads(list); saveScratchpads(list); };
+  const newPad=(template)=>{
+    setChooser(false);
+    setEditing({ id:"sp"+Date.now(), title:"", template, strokes:[], thumb:"",
+                 createdAt:Date.now(), updatedAt:Date.now(), isNew:true });
+  };
+  const savePad=(p)=>{
+    const {isNew,...rest}=p;
+    // Discard a brand-new note that was never drawn on.
+    if(isNew && (!rest.strokes || !rest.strokes.length)){ setEditing(null); return; }
+    const exists=pads.some(x=>x.id===rest.id);
+    persist(exists ? pads.map(x=>x.id===rest.id?rest:x) : [rest,...pads]);
+    setEditing(null);
+  };
+  const deletePad=(id)=>{ if(!confirm(t.scratchDeleteConfirm)) return; persist(pads.filter(x=>x.id!==id)); };
+
+  if(editing) return <ScratchpadEditor pad={editing} settings={settings} onSave={savePad}/>;
+
+  const TEMPLATES=[
+    {id:"blank",label:t.scratchBlank,icon:"▢"},
+    {id:"grid", label:t.scratchGrid, icon:"▦"},
+    {id:"lines",label:t.scratchLines,icon:"≡"},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:c.bg,padding:"16px 16px 100px"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,minHeight:30}}>
+        <button onClick={()=>setEditMode(m=>!m)} disabled={!pads.length}
+                style={{background:"transparent",border:"none",color:pads.length?(editMode?c.accent:c.textDim):"transparent",
+                        fontSize:11,fontWeight:"bold",letterSpacing:2,cursor:pads.length?"pointer":"default",width:56,textAlign:"left"}}>
+          {editMode?t.done2:t.edit}
+        </button>
+        <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:c.accent}}>{t.scratchTitle}</div>
+        <button onClick={()=>setChooser(true)}
+                style={{width:36,height:36,borderRadius:9,background:c.accent+"18",border:`1px solid ${c.accent}`,
+                        color:c.accent,fontSize:22,lineHeight:1,cursor:"pointer",flexShrink:0,
+                        display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+      </div>
+
+      {/* Empty state */}
+      {!pads.length && (
+        <div style={{textAlign:"center",marginTop:80,color:c.textDim}}>
+          <div style={{fontSize:52,marginBottom:14,opacity:0.5}}>✎</div>
+          <div style={{fontSize:14,letterSpacing:1,marginBottom:6,color:c.text}}>{t.scratchEmpty}</div>
+          <div style={{fontSize:12,letterSpacing:0.5}}>{t.scratchEmptyHint}</div>
+        </div>
+      )}
+
+      {/* Gallery grid */}
+      {!!pads.length && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:14}}>
+          {pads.map(p=>(
+            <div key={p.id} onClick={()=>!editMode&&setEditing({...p})}
+                 style={{background:c.cardBg,border:`1px solid ${c.border}`,borderRadius:12,overflow:"hidden",
+                         cursor:editMode?"default":"pointer",position:"relative",transition:"all 0.2s",
+                         boxShadow:"0 1px 3px rgba(0,0,0,0.15)"}}>
+              <div style={{aspectRatio:"4 / 3",background:c.paper,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {p.thumb
+                  ? <img src={p.thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                  : <span style={{fontSize:30,opacity:0.35,color:c.textDim}}>✎</span>}
+              </div>
+              <div style={{padding:"9px 11px"}}>
+                <div style={{fontSize:12,fontWeight:"bold",color:c.text,letterSpacing:0.5,whiteSpace:"nowrap",
+                             overflow:"hidden",textOverflow:"ellipsis"}}>{p.title||t.scratchUntitled}</div>
+                <div style={{fontSize:10,color:c.textDim,marginTop:3,letterSpacing:0.5,textTransform:"none"}}>{fmtScratchDate(p.updatedAt)}</div>
+              </div>
+              {editMode && (
+                <button onClick={(e)=>{e.stopPropagation();deletePad(p.id);}}
+                        style={{position:"absolute",top:6,right:6,width:26,height:26,borderRadius:"50%",
+                                background:"#E53935",border:"2px solid #fff",color:"#fff",fontSize:14,fontWeight:"bold",
+                                cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                                boxShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Template chooser (mirrors ForeFlight's "Choose A Template") */}
+      {chooser && (
+        <div onClick={()=>setChooser(false)}
+             style={{position:"fixed",inset:0,zIndex:150,background:"rgba(0,0,0,0.55)",
+                     display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} className="slide-up"
+               style={{background:c.cardBg,border:`1px solid ${c.border}`,borderRadius:16,padding:"22px 20px",
+                       width:"100%",maxWidth:360,boxShadow:"0 12px 40px rgba(0,0,0,0.5)"}}>
+            <div style={{textAlign:"center",fontSize:13,letterSpacing:3,color:c.accent,fontWeight:"bold",marginBottom:18}}>{t.scratchChooseTemplate}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+              {TEMPLATES.map(tp=>(
+                <button key={tp.id} onClick={()=>newPad(tp.id)}
+                        style={{background:c.bg,border:`1px solid ${c.border}`,borderRadius:12,padding:"18px 6px",
+                                cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:8,
+                                transition:"all 0.15s"}}
+                        onMouseEnter={e=>{e.currentTarget.style.borderColor=c.accent;e.currentTarget.style.boxShadow=`0 0 14px ${c.accent}33`;}}
+                        onMouseLeave={e=>{e.currentTarget.style.borderColor=c.border;e.currentTarget.style.boxShadow="none";}}>
+                  <span style={{fontSize:34,color:c.accent,lineHeight:1}}>{tp.icon}</span>
+                  <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1,color:c.text}}>{tp.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
+    </div>
+  );
+}
+
+function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onScratchpad,onOptions,settings}){
   const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
   const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
@@ -2890,6 +3284,7 @@ function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onOptions,settings}
   const ITEMS=[
     {id:"checklist",label:t.menuChecklist,desc:t.menuChecklistDesc,icon:"☑",color:"#4FC3F7",action:onChecklist},
     {id:"wb",label:t.menuWB,desc:t.menuWBDesc,icon:"⚖",color:"#66BB6A",action:onWeightBalance},
+    {id:"scratch",label:t.menuScratch,desc:t.menuScratchDesc,icon:"✎",color:"#26A69A",action:onScratchpad},
     {id:"admin",label:t.menuAdmin,desc:t.menuAdminDesc,icon:"🔧",color:"#FF9800",action:onAdmin},
     {id:"options",label:t.menuOptions,desc:t.menuOptionsDesc,icon:"⚙",color:"#AB47BC",action:onOptions},
   ];
@@ -3066,6 +3461,7 @@ function App(){
           settings={settings}
           onChecklist={()=>setView("checklist-home")}
           onWeightBalance={()=>setView("weight-balance")}
+          onScratchpad={()=>setView("scratchpad")}
           onAdmin={()=>setView("admin")}
           onOptions={openSettings}
         />
@@ -3105,6 +3501,9 @@ function App(){
       )}
       {view==="weight-balance" && (
         <WeightBalanceScreen settings={settings} onBack={()=>setView("main")} onSettings={openSettings}/>
+      )}
+      {view==="scratchpad" && (
+        <ScratchpadScreen settings={settings} onBack={()=>setView("main")} onSettings={openSettings}/>
       )}
       {view==="admin" && (
         <AdminScreen settings={settings} onBack={()=>setView("main")} onSettings={openSettings}/>
