@@ -117,6 +117,14 @@ function saveAcData(d){try{localStorage.setItem(AC_DATA_KEY,JSON.stringify(d));}
 function loadCustomAC(){try{return JSON.parse(localStorage.getItem(CUSTOM_AC_KEY))||[];}catch{return [];}}
 function saveCustomAC(l){try{localStorage.setItem(CUSTOM_AC_KEY,JSON.stringify(l));}catch{}}
 
+// In-progress checklist state, persisted per aircraft so partially completed
+// checklists survive app reloads/closes until the pilot presses RESET.
+const PROGRESS_KEY = "preflightProgress_v1";
+function loadProgress(){try{return JSON.parse(localStorage.getItem(PROGRESS_KEY))||{};}catch{return {};}}
+function saveProgress(p){try{localStorage.setItem(PROGRESS_KEY,JSON.stringify(p));}catch{}}
+function loadAcProgress(acId){const p=loadProgress()[acId]||{};return {checked:p.checked||{},confirmed:p.confirmed||{}};}
+function saveAcProgress(acId,checked,confirmed){const all=loadProgress();all[acId]={checked,confirmed};saveProgress(all);}
+
 // Returns effective config for an aircraft, merging base data with any persisted overrides.
 // override shape per id: {checklist:{en,es}, speedTable, emergencies:{en,es}, wb:{emptyW,emptyArm,stations,maxGross,envelope}}
 function getAcOverride(id){
@@ -1796,7 +1804,7 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
 
   const phases = Object.keys(allPhases);
   const [activePhase,setActivePhase] = useState(phases[0]);
-  const [checked,setChecked] = useState({});
+  const [checked,setChecked] = useState(()=>loadAcProgress(aircraftId).checked);
   const [completing,setCompleting] = useState({});
   const [showSpeeds,setShowSpeeds] = useState(false);
   const [showEmergencies, setShowEmergencies] = useState(false);
@@ -1824,7 +1832,10 @@ function ChecklistScreen({aircraftId,onBack,onSettings,settings,customLists}){
   const items = allPhases[activePhase]||[];
   const accent = isCustom ? accentSys : phaseColor(activePhase);
 
-  const [confirmed,setConfirmed] = useState({});
+  const [confirmed,setConfirmed] = useState(()=>loadAcProgress(aircraftId).confirmed);
+
+  // Persist in-progress checklist state to the device on every change.
+  useEffect(()=>{ saveAcProgress(aircraftId,checked,confirmed); },[aircraftId,checked,confirmed]);
 
   const toggle = (phase,idx)=>{
     const key = `${phase}-${idx}`;
