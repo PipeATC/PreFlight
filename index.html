@@ -83,7 +83,7 @@ const T = {
     menuScratch:"SCRATCHPAD", menuScratchDesc:"Handwritten Notes · Pen, Touch & Mouse",
     menuOptions:"OPTIONS", menuOptionsDesc:"Settings & Preferences",
     menuHome:"MAIN MENU",
-    tplDraw:"DRAW", tplType:"TYPE", tplGrid:"GRID", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplDraw:"DRAW", tplLines:"LINES", tplGrid:"GRID", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"TAKEOFF", tplLanding:"LANDING", tplHolding:"HOLDING",
     scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
@@ -112,7 +112,7 @@ const T = {
     menuScratch:"BLOC DE NOTAS", menuScratchDesc:"Notas a mano · Lápiz, Táctil y Mouse",
     menuOptions:"OPCIONES", menuOptionsDesc:"Ajustes y Preferencias",
     menuHome:"MENÚ PRINCIPAL",
-    tplDraw:"DIBUJO", tplType:"TEXTO", tplGrid:"CUADRÍCULA", tplCraft:"CRAFT", tplAtis:"ATIS",
+    tplDraw:"DIBUJO", tplLines:"LÍNEAS", tplGrid:"CUADRÍCULA", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"DESPEGUE", tplLanding:"ATERRIZAJE", tplHolding:"ESPERA",
     scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
@@ -3490,7 +3490,7 @@ function ScratchpadScreen({settings,onBack,onSettings}){
 
   const TEMPLATES=[
     {id:"draw",   label:t.tplDraw,   icon:"✎"},
-    {id:"type",   label:t.tplType,   icon:"T"},
+    {id:"lines",  label:t.tplLines,  icon:"≡"},
     {id:"grid",   label:t.tplGrid,   icon:"▦"},
     {id:"craft",  label:t.tplCraft,  icon:"▣"},
     {id:"atis",   label:t.tplAtis,   icon:"☁"},
