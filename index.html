@@ -82,6 +82,7 @@ const T = {
     menuAdmin:"ADMINISTRATION", menuAdminDesc:"Aircraft & Checklist Management",
     menuScratch:"SCRATCHPAD", menuScratchDesc:"Handwritten Notes · Pen, Touch & Mouse",
     menuOptions:"OPTIONS", menuOptionsDesc:"Settings & Preferences",
+    menuHome:"MAIN MENU",
     scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
     scratchEmpty:"No scratchpads yet.", scratchEmptyHint:"Tap + to create your first note.",
@@ -108,6 +109,7 @@ const T = {
     menuAdmin:"ADMINISTRACIÓN", menuAdminDesc:"Gestión de Aeronaves y Listas",
     menuScratch:"BLOC DE NOTAS", menuScratchDesc:"Notas a mano · Lápiz, Táctil y Mouse",
     menuOptions:"OPCIONES", menuOptionsDesc:"Ajustes y Preferencias",
+    menuHome:"MENÚ PRINCIPAL",
     scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
     scratchEmpty:"Aún no hay notas.", scratchEmptyHint:"Toca + para crear tu primera nota.",
@@ -3272,6 +3274,72 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   );
 }
 
+// ── MODULE DRAWER (side navigation to jump between modules) ─────────────────
+function ModuleDrawer({open,setOpen,onNavigate,settings,current}){
+  const t=uiT(settings);
+  const panelBg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
+  const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
+  const border=settings.milGreen?"#2a4018":settings.whiteMode?"#d0dde8":"#1e2a3a";
+  const text=settings.milGreen?"#b8c9a0":settings.whiteMode?"#1a2535":"#c8d6e5";
+  const textDim=settings.milGreen?"#5a7040":settings.whiteMode?"#8899aa":"#3a5070";
+  const accent=settings.milGreen?"#8fbc5a":"#4FC3F7";
+  const [hov,setHov]=useState(null);
+  const ITEMS=[
+    {id:"main",label:t.menuHome,icon:"⌂",color:accent,match:["main"]},
+    {id:"weight-balance",label:t.menuWB,icon:"⚖",color:"#66BB6A",match:["weight-balance"]},
+    {id:"checklist-home",label:t.menuChecklist,icon:"☑",color:"#4FC3F7",match:["checklist-home","type","checklist"]},
+    {id:"scratchpad",label:t.menuScratch,icon:"✎",color:"#26A69A",match:["scratchpad"]},
+    {id:"options",label:t.menuOptions,icon:"⚙",color:"#AB47BC",match:[]},
+    {id:"admin",label:t.menuAdmin,icon:"🔧",color:"#FF9800",match:["admin"]},
+  ];
+  return (
+    <React.Fragment>
+      {/* 3-dot menu button (top-left) */}
+      <button aria-label="Menu" onClick={()=>setOpen(true)}
+        style={{position:"fixed",top:"calc(10px + env(safe-area-inset-top, 0px))",left:12,zIndex:150,
+                width:38,height:38,borderRadius:9,background:cardBg,border:`1px solid ${border}`,
+                color:text,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:22,lineHeight:1,boxShadow:"0 2px 10px rgba(0,0,0,0.25)"}}>⋮</button>
+      {/* Backdrop */}
+      {open && <div onClick={()=>setOpen(false)}
+        style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200,
+                backdropFilter:"blur(2px)",WebkitBackdropFilter:"blur(2px)"}}/>}
+      {/* Sliding sidebar */}
+      <div style={{position:"fixed",top:0,left:0,bottom:0,width:236,maxWidth:"78vw",zIndex:210,
+                   background:panelBg,borderRight:`1px solid ${border}`,
+                   transform:open?"translateX(0)":"translateX(-102%)",transition:"transform 0.25s ease",
+                   boxShadow:open?"4px 0 24px rgba(0,0,0,0.4)":"none",
+                   display:"flex",flexDirection:"column",
+                   paddingTop:"calc(14px + env(safe-area-inset-top, 0px))"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"0 14px 14px",borderBottom:`1px solid ${border}`,marginBottom:8}}>
+          <span style={{fontSize:20,color:accent}}>✈</span>
+          <span style={{flex:1,fontSize:13,fontWeight:"bold",letterSpacing:3,color:text}}>PREFLIGHT</span>
+          <button aria-label="Close" onClick={()=>setOpen(false)}
+            style={{background:"transparent",border:"none",color:textDim,fontSize:20,cursor:"pointer",lineHeight:1}}>×</button>
+        </div>
+        {ITEMS.map(item=>{
+          const active=item.match.includes(current);
+          const isHov=hov===item.id;
+          return (
+            <div key={item.id} onClick={()=>onNavigate(item.id)}
+                 onMouseEnter={()=>setHov(item.id)} onMouseLeave={()=>setHov(null)}
+                 style={{display:"flex",alignItems:"center",gap:11,padding:"11px 14px",margin:"1px 8px",
+                         borderRadius:8,cursor:"pointer",
+                         background:active?`${item.color}1e`:isHov?`${item.color}12`:"transparent",
+                         borderLeft:`3px solid ${active?item.color:"transparent"}`,transition:"background 0.15s"}}>
+              <span style={{width:26,height:26,flexShrink:0,fontSize:16,borderRadius:6,
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            background:`${item.color}18`,border:`1px solid ${item.color}44`}}>{item.icon}</span>
+              <span style={{fontSize:12,fontWeight:"bold",letterSpacing:1,
+                            color:active?item.color:text}}>{item.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </React.Fragment>
+  );
+}
+
 function MainMenuScreen({onChecklist,onWeightBalance,onAdmin,onScratchpad,onOptions,settings}){
   const bg=settings.milGreen?"#0d1208":settings.whiteMode?"#f0f4f8":"#0a0e14";
   const cardBg=settings.milGreen?"#141d0a":settings.whiteMode?"#fff":"#0d1624";
@@ -3454,8 +3522,19 @@ function App(){
   const selectType = (typeId)=>{ setSelectedType(typeId); setView("type"); };
   const openSettings = ()=>setShowSettings(true);
 
+  const [showDrawer,setShowDrawer]=useState(false);
+  const navigateModule = (id)=>{
+    setShowDrawer(false);
+    if(id==="options"){ openSettings(); return; }
+    setView(id);
+  };
+
   return (
     <div style={{display:"flex",flexDirection:"column",minHeight:"100vh"}}>
+      {view!=="main" && (
+        <ModuleDrawer open={showDrawer} setOpen={setShowDrawer}
+          onNavigate={navigateModule} settings={settings} current={view}/>
+      )}
       {view==="main" && (
         <MainMenuScreen
           settings={settings}
