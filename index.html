@@ -3430,6 +3430,7 @@ function ScratchpadEditor({pad,settings,onSave}){
   const [width,setWidth]=useState(()=>{const p=loadScratchPrefs(); return WIDTHS.includes(p.width)?p.width:4;});
   const [erase,setErase]=useState(false);
   const [penOnly,setPenOnly]=useState(()=>!!loadScratchPrefs().penOnly);
+  const [showClearConfirm,setShowClearConfirm]=useState(false);
   const [,force]=useState(0); const rerender=()=>force(v=>v+1);
   useEffect(()=>{ saveScratchPrefs({color,width,penOnly}); },[color,width,penOnly]);
 
@@ -3593,7 +3594,8 @@ function ScratchpadEditor({pad,settings,onSave}){
     }
     renderStrokes(); rerender();
   };
-  const clearAll=()=>{ if(!strokesRef.current.length) return; if(!confirm(t.scratchClearConfirm)) return; undoRef.current=[]; redoRef.current=[]; strokesRef.current=[]; renderStrokes(); rerender(); };
+  const clearAll=()=>{ if(!strokesRef.current.length) return; setShowClearConfirm(true); };   // opens styled modal (see below)
+  const doClear=()=>{ undoRef.current=[]; redoRef.current=[]; strokesRef.current=[]; renderStrokes(); rerender(); setShowClearConfirm(false); };
 
   const makeThumb=()=>{
     if(!strokesRef.current.length) return "";
@@ -3686,6 +3688,19 @@ function ScratchpadEditor({pad,settings,onSave}){
         <button onClick={()=>setErase(e=>!e)} style={btn(erase)}>◨ {t.scratchEraser}</button>
         <button onClick={()=>setPenOnly(p=>!p)} style={btn(penOnly)}>✎ {t.scratchPenOnly}</button>
       </div>
+
+      {/* Clear confirmation (matches the gallery delete / checklist RESET dialog) */}
+      {showClearConfirm && (
+        <div style={{position:"fixed",inset:0,zIndex:600,background:"#0009",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:c.cardBg,border:`1px solid ${c.border}`,borderRadius:10,padding:24,maxWidth:300,width:"100%",textAlign:"center"}}>
+            <div style={{fontSize:14,fontWeight:"bold",color:c.text,marginBottom:20,letterSpacing:0.5}}>{t.scratchClearConfirm}</div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setShowClearConfirm(false)} style={{flex:1,padding:"12px 0",background:"transparent",border:`1px solid ${c.border}`,color:c.textDim,cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.cancel}</button>
+              <button onClick={doClear} style={{flex:1,padding:"12px 0",background:"#FF525214",border:"1px solid #FF5252",color:"#FF5252",cursor:"pointer",borderRadius:6,fontSize:12,fontWeight:"bold",letterSpacing:1}}>{t.scratchYesDelete}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
