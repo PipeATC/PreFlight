@@ -86,7 +86,7 @@ const T = {
     menuHome:"MAIN MENU",
     tplDraw:"DRAW", tplLines:"LINES", tplGrid:"GRID", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"TAKEOFF", tplLanding:"LANDING", tplHolding:"HOLDING",
-    scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchChooseTemplate:"CHOOSE A TEMPLATE",
+    scratchTitle:"SCRATCHPADS", scratchNew:"NEW SCRATCHPAD", scratchNewShort:"NEW", scratchChooseTemplate:"CHOOSE A TEMPLATE",
     scratchBlank:"BLANK", scratchGrid:"GRID", scratchLines:"LINES",
     scratchEmpty:"No scratchpads yet.", scratchEmptyHint:"Tap + to create your first note.",
     scratchClearConfirm:"Clear this scratchpad?", scratchDeleteConfirm:"Delete this scratchpad?", scratchYesDelete:"YES, DELETE",
@@ -116,7 +116,7 @@ const T = {
     menuHome:"MENÚ PRINCIPAL",
     tplDraw:"DIBUJO", tplLines:"LÍNEAS", tplGrid:"CUADRÍCULA", tplCraft:"CRAFT", tplAtis:"ATIS",
     tplPirep:"PIREP", tplTakeoff:"DESPEGUE", tplLanding:"ATERRIZAJE", tplHolding:"ESPERA",
-    scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
+    scratchTitle:"BLOC DE NOTAS", scratchNew:"NUEVA NOTA", scratchNewShort:"NUEVA", scratchChooseTemplate:"ELIGE UNA PLANTILLA",
     scratchBlank:"EN BLANCO", scratchGrid:"CUADRÍCULA", scratchLines:"LÍNEAS",
     scratchEmpty:"Aún no hay notas.", scratchEmptyHint:"Toca + para crear tu primera nota.",
     scratchClearConfirm:"¿Borrar el contenido de esta nota?", scratchDeleteConfirm:"¿Eliminar esta nota?", scratchYesDelete:"SÍ, ELIMINAR",
@@ -3602,17 +3602,8 @@ function ScratchpadScreen({settings,onBack,onSettings}){
   return (
     <div style={{minHeight:"100vh",background:c.bg,padding:"16px 16px 100px"}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,minHeight:30,paddingLeft:44}}>
-        <button onClick={()=>setEditMode(m=>!m)} disabled={!pads.length}
-                style={{background:"transparent",border:"none",color:pads.length?(editMode?c.accent:c.textDim):"transparent",
-                        fontSize:11,fontWeight:"bold",letterSpacing:2,cursor:pads.length?"pointer":"default",width:56,textAlign:"left"}}>
-          {editMode?t.done2:t.edit}
-        </button>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,minHeight:30,padding:"0 44px"}}>
         <div style={{flex:1,textAlign:"center",fontSize:11,letterSpacing:6,color:c.accent}}>{t.scratchTitle}</div>
-        <button onClick={()=>setChooser(true)}
-                style={{width:36,height:36,borderRadius:9,background:c.accent+"18",border:`1px solid ${c.accent}`,
-                        color:c.accent,fontSize:22,lineHeight:1,cursor:"pointer",flexShrink:0,
-                        display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
       </div>
 
       {/* Module hero icon (matches Weight & Balance) — always shown */}
@@ -3697,7 +3688,22 @@ function ScratchpadScreen({settings,onBack,onSettings}){
         </div>
       )}
 
-      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}/>
+      <BottomNavBar onBack={onBack} onSettings={onSettings} settings={settings}>
+        <button onClick={()=>setChooser(true)}
+                style={{flex:1,background:"transparent",border:"none",color:c.accent,display:"flex",
+                        flexDirection:"column",alignItems:"center",gap:5,cursor:"pointer"}}>
+          <span style={{fontSize:22,lineHeight:1}}>+</span>
+          <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1}}>{t.scratchNewShort}</span>
+        </button>
+        <button onClick={()=>setEditMode(m=>!m)} disabled={!pads.length}
+                style={{flex:1,background:"transparent",border:"none",
+                        color:pads.length?(editMode?c.accent:c.textDim):c.textDim,opacity:pads.length?1:0.5,
+                        display:"flex",flexDirection:"column",alignItems:"center",gap:5,
+                        cursor:pads.length?"pointer":"default"}}>
+          <span style={{fontSize:20,lineHeight:1,marginTop:2}}>✎</span>
+          <span style={{fontSize:10,fontWeight:"bold",letterSpacing:1}}>{editMode?t.done2:t.edit}</span>
+        </button>
+      </BottomNavBar>
     </div>
   );
 }
