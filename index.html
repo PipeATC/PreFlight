@@ -3485,6 +3485,33 @@ function ScratchpadEditor({pad,settings,onSave}){
   useEffect(()=>{ if(wrapRef.current){ renderBg(); renderStrokes(); } // eslint-disable-next-line
   },[settings.milGreen,settings.whiteMode]);
 
+  // Kill the iPadOS long-press text-selection / lookup callout that pops up when
+  // the Pencil is held still (pressure) or a palm rests on the glass. CSS
+  // user-select:none isn't enough — we must cancel the native touch/selection
+  // gestures over the drawing surface (but leave the title <input> usable).
+  useEffect(()=>{
+    const cv=drawRef.current, wrap=wrapRef.current;
+    const inInput=(t)=> t && (t.tagName==="INPUT" || t.tagName==="TEXTAREA");
+    const stopSel=(e)=>{ if(!inInput(e.target)) e.preventDefault(); };
+    const stopTouch=(e)=>{ e.preventDefault(); };   // suppress scroll, callout & mouse emulation on canvas
+    document.addEventListener("selectstart",stopSel);
+    document.addEventListener("contextmenu",stopSel);
+    [cv,wrap].forEach(el=>{ if(el){
+      el.addEventListener("touchstart",stopTouch,{passive:false});
+      el.addEventListener("touchmove", stopTouch,{passive:false});
+      el.addEventListener("touchend",  stopTouch,{passive:false});
+    }});
+    return ()=>{
+      document.removeEventListener("selectstart",stopSel);
+      document.removeEventListener("contextmenu",stopSel);
+      [cv,wrap].forEach(el=>{ if(el){
+        el.removeEventListener("touchstart",stopTouch);
+        el.removeEventListener("touchmove", stopTouch);
+        el.removeEventListener("touchend",  stopTouch);
+      }});
+    };
+  },[]);
+
   const nrm=(e)=>{
     const r=drawRef.current.getBoundingClientRect();
     return [ (e.clientX-r.left)/r.width, (e.clientY-r.top)/r.height ];
